@@ -7,7 +7,7 @@ export default function App() {
           v0.1 scaffold. Run Storybook to iterate on the UI:
         </p>
         <pre className="mt-4 inline-block rounded bg-muted px-3 py-2 text-sm">
-          pnpm storybook
+          bun ui:storybook
         </pre>
       </div>
     </div>

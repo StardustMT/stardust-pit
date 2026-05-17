@@ -4,8 +4,8 @@
   "version": "0.0.1",
   "identifier": "com.stardust.app",
   "build": {
-    "beforeDevCommand": "pnpm --filter stardust-ui dev",
-    "beforeBuildCommand": "pnpm --filter stardust-ui build",
+    "beforeDevCommand": "bun --filter stardust-ui dev",
+    "beforeBuildCommand": "bun --filter stardust-ui build",
     "frontendDist": "../stardust-ui/dist",
     "devUrl": "http://localhost:1420"
   },
