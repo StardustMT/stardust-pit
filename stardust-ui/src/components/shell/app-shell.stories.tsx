@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
-import { Maximize2, Sparkles, X } from "lucide-react"
+import { Play, Sparkles, X } from "lucide-react"
 import { AppMenuBar } from "./app-menu-bar"
 import { NavRail, type NavId } from "./nav-rail"
 import { ModeSwitcher, type AppMode } from "./mode-switcher"
@@ -188,7 +188,7 @@ function Shell({
         </div>
         {perform && (
           <Button onClick={onGoLive} className="gap-2">
-            <Maximize2 className="size-4" />
+            <Play className="size-4 fill-current" />
             Go Live
           </Button>
         )}
@@ -209,9 +209,9 @@ function Shell({
         bufferSize={128}
         latencyMs={7.8}
         midiPortCount={4}
-        bpm={92}
-        transposeSemitones={0}
         cpu={0.42}
+        ramMb={5_400}
+        ramTotalMb={32_768}
       />
     </div>
   )

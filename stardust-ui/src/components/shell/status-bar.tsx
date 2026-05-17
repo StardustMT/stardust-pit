@@ -1,12 +1,13 @@
 import * as React from "react"
-import { AudioLines, Cable, Cpu, Disc3, Music, Timer } from "lucide-react"
+import { AudioLines, Cable, Cpu, Disc3, MemoryStick, Timer } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
- * Persistent status bar at the bottom of the app shell. All the
- * always-on system info that doesn't need its own widget on the canvas:
- * audio device, sample rate / buffer / latency, tempo + transpose,
- * MIDI port count, CPU. Click any cell to deep-link to its settings.
+ * Persistent status bar at the bottom of the app shell. Top-level
+ * SYSTEM info only — anything song-specific (tempo, transpose, key)
+ * belongs on the canvas as a widget, not here. Logical grouping:
+ *
+ *   [ show context ] | [ audio device + buffer + ports ] | [ system perf: latency · CPU · RAM ]
  */
 
 export interface StatusBarProps {
@@ -15,9 +16,12 @@ export interface StatusBarProps {
   bufferSize: number
   latencyMs: number
   midiPortCount: number
-  bpm: number
-  transposeSemitones: number
+  /** CPU load, 0..1 */
   cpu: number
+  /** Used RAM in MB */
+  ramMb: number
+  /** Total RAM in MB (for fraction display) */
+  ramTotalMb?: number
   showName?: string
   songName?: string
   className?: string
@@ -29,9 +33,9 @@ export function StatusBar({
   bufferSize,
   latencyMs,
   midiPortCount,
-  bpm,
-  transposeSemitones,
   cpu,
+  ramMb,
+  ramTotalMb,
   showName,
   songName,
   className,
@@ -43,25 +47,37 @@ export function StatusBar({
         className,
       )}
     >
+      {/* ── Show context ──────────────────────────────────────────── */}
       {showName && (
-        <Cell icon={<Disc3 className="size-3" />} title="Show">
-          <span className="text-foreground/85">{showName}</span>
-          {songName && (
-            <>
-              <span className="opacity-60"> · </span>
-              <span>{songName}</span>
-            </>
-          )}
-        </Cell>
+        <>
+          <Cell icon={<Disc3 className="size-3" />} title="Show">
+            <span className="text-foreground/85">{showName}</span>
+            {songName && (
+              <>
+                <span className="opacity-60"> · </span>
+                <span>{songName}</span>
+              </>
+            )}
+          </Cell>
+          <GroupBreak />
+        </>
       )}
-      <Separator />
-      <Cell icon={<AudioLines className="size-3" />} title="Audio">
+
+      {/* ── Audio I/O ─────────────────────────────────────────────── */}
+      <Cell icon={<AudioLines className="size-3" />} title="Audio device">
         {audioDevice}
         <span className="opacity-60"> · </span>
         {bufferSize} / {sampleRate / 1000}k
       </Cell>
       <Separator />
-      <Cell icon={<Timer className="size-3" />} title="Latency">
+      <Cell icon={<Cable className="size-3" />} title="MIDI ports">
+        {midiPortCount} ports
+      </Cell>
+
+      <GroupBreak />
+
+      {/* ── System performance: latency + CPU + RAM ───────────────── */}
+      <Cell icon={<Timer className="size-3" />} title="Audio latency">
         <span
           className={cn(
             latencyMs > 20 && "text-destructive",
@@ -70,17 +86,6 @@ export function StatusBar({
         >
           {latencyMs.toFixed(1)} ms
         </span>
-      </Cell>
-      <Separator />
-      <Cell icon={<Cable className="size-3" />} title="MIDI ports">
-        {midiPortCount} ports
-      </Cell>
-      <Separator />
-      <Cell icon={<Music className="size-3" />} title="Tempo / transpose">
-        {Math.round(bpm)} bpm
-        <span className="opacity-60"> · </span>
-        {transposeSemitones > 0 ? "+" : ""}
-        {transposeSemitones} st
       </Cell>
       <Separator />
       <Cell icon={<Cpu className="size-3" />} title="CPU">
@@ -92,6 +97,17 @@ export function StatusBar({
         >
           {Math.round(cpu * 100)}%
         </span>
+      </Cell>
+      <Separator />
+      <Cell icon={<MemoryStick className="size-3" />} title="Memory">
+        {ramTotalMb ? (
+          <>
+            {(ramMb / 1024).toFixed(1)}
+            <span className="opacity-60"> / {(ramTotalMb / 1024).toFixed(0)}</span> GB
+          </>
+        ) : (
+          <>{(ramMb / 1024).toFixed(1)} GB</>
+        )}
       </Cell>
     </div>
   )
@@ -118,6 +134,12 @@ function Cell({
   )
 }
 
+/** Thin in-group separator between adjacent cells */
 function Separator() {
   return <span aria-hidden className="mx-px h-3 w-px bg-border" />
+}
+
+/** Wider visual break between groups of related cells */
+function GroupBreak() {
+  return <span aria-hidden className="mx-2 h-4 w-px bg-border/60" />
 }

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronDown, ChevronRight, Layers } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -293,12 +293,14 @@ function PatchRow({
       <span className="min-w-0 flex-1 truncate">
         {patch.name}
         {patch.compound && (
-          <Layers
+          <span
             className={cn(
-              "ml-1 inline size-3 align-text-bottom",
-              current ? "text-primary-foreground/80" : "text-muted-foreground",
+              "ml-1.5 text-[10px] italic",
+              current ? "text-primary-foreground/70" : "text-muted-foreground",
             )}
-          />
+          >
+            compound
+          </span>
         )}
       </span>
       {next && (
