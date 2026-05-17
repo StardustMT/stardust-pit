@@ -1,0 +1,19 @@
+{
+  "name": "stardust-workspace",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Stardust monorepo root. Run pnpm commands here; package work lives in stardust-ui/.",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "dev": "cargo tauri dev --manifest-path stardust-core/Cargo.toml --config stardust-core/tauri.conf.json",
+    "build": "cargo tauri build --manifest-path stardust-core/Cargo.toml --config stardust-core/tauri.conf.json",
+    "ui:dev": "pnpm --filter stardust-ui dev",
+    "ui:build": "pnpm --filter stardust-ui build",
+    "ui:storybook": "pnpm --filter stardust-ui storybook",
+    "ui:build-storybook": "pnpm --filter stardust-ui build-storybook",
+    "ui:lint": "pnpm --filter stardust-ui lint",
+    "ui:typecheck": "pnpm --filter stardust-ui typecheck",
+    "ui:test": "pnpm --filter stardust-ui test"
+  },
+  "packageManager": "pnpm@9.12.3"
+}

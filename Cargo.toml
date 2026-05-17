@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["stardust-core"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/ChaseCondon/Stardust"
+homepage = "https://github.com/ChaseCondon/Stardust"
+authors = ["Chase Condon <chase.condon@gmail.com>"]
+
+[workspace.dependencies]
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+
+# Serialisation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Overture (sibling library, sourced locally during development)
+overture = { path = "../Overture/crates/overture", version = "0.0.1", features = ["full"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+debug = "line-tables-only"
+
+[profile.dev]
+opt-level = 1  # speed up audio code during dev
