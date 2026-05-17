@@ -6,6 +6,7 @@ import { NavRail, type NavId } from "./nav-rail"
 import { ModeSwitcher, type AppMode } from "./mode-switcher"
 import { StatusBar } from "./status-bar"
 import { ShowOutline } from "@/components/widgets/show-outline"
+import { SignalChain, type ChainPart } from "@/components/widgets/signal-chain"
 import { Button } from "@/components/ui/button"
 
 const meta: Meta = {
@@ -269,14 +270,69 @@ function LiveFullscreen({
   )
 }
 
-function CanvasFor({ mode, songName, patchName }: { mode: AppMode; songName?: string; patchName?: string }) {
-  if (mode === "program") {
-    return (
-      <Placeholder
-        title="Program canvas"
-        body={`Selected: ${songName ?? "—"} → ${patchName ?? "—"}. Patch signal chain (Instrument → FX → Output) lands here. Click a block to surface its parameters in the Inspector.`}
+const VERSE_SPLIT_PARTS: ChainPart[] = [
+  {
+    id: "bass",
+    label: "Bass",
+    color: "var(--chart-1)",
+    blocks: [
+      { kind: "instrument", id: "wurli", name: "Wurlitzer 200A", vendor: "AAS", format: "VST3", cpu: 0.06 },
+      { kind: "builtin-effect", id: "bass-eq", name: "EQ · low boost" },
+    ],
+  },
+  {
+    id: "ep",
+    label: "Rhodes EP",
+    color: "var(--chart-2)",
+    blocks: [
+      { kind: "instrument", id: "scarbee", name: "Scarbee Mark I", vendor: "Native Instruments", format: "VST3", cpu: 0.14 },
+      { kind: "effect", id: "tremolo", name: "Tremolator", vendor: "Soundtoys", format: "VST3", cpu: 0.03 },
+      { kind: "effect", id: "ep-verb", name: "Valhalla VintageVerb", vendor: "Valhalla DSP", format: "VST3", cpu: 0.04 },
+    ],
+  },
+]
+
+function ProgramCanvas({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
+  return (
+    <div className="h-full p-3">
+      <SignalChain
+        parts={VERSE_SPLIT_PARTS}
+        selectedId={selectedId}
+        onSelectBlock={onSelect}
+        outputDb={-5.4}
+        className="h-full"
       />
-    )
+    </div>
+  )
+}
+
+function SetupCanvas() {
+  return (
+    <div className="grid h-full grid-cols-2 gap-3 p-3">
+      <Placeholder
+        title="Rig"
+        body="Hardware devices (keyboards, footswitches, expression pedals, MIDI controllers). Each entry is your physical setup with its canonical config. Cascaded later by Show / Song / Patch."
+      />
+      <Placeholder
+        title="Show metadata"
+        body="Show name, unit terminology (Song / Number / Cue), default audio device, default layout, save location. Top-level show settings that don't fit elsewhere."
+      />
+    </div>
+  )
+}
+
+function CanvasFor({
+  mode,
+  selectedBlockId,
+  onSelectBlock,
+}: {
+  mode: AppMode
+  selectedBlockId?: string
+  onSelectBlock: (id: string) => void
+}) {
+  if (mode === "setup") return <SetupCanvas />
+  if (mode === "program") {
+    return <ProgramCanvas selectedId={selectedBlockId} onSelect={onSelectBlock} />
   }
   return (
     <Placeholder
@@ -311,14 +367,61 @@ function ContextPanelForMode({ nav }: { nav: NavId; mode: AppMode }) {
   )
 }
 
-function InspectorForMode({ mode }: { mode: AppMode }) {
-  if (mode === "program") {
+function blockInspectorContent(selectedId?: string): { label: string; title: string; body: string } {
+  for (const part of VERSE_SPLIT_PARTS) {
+    const b = part.blocks.find((x) => x.id === selectedId)
+    if (!b) continue
+    if (b.kind === "instrument") {
+      return {
+        label: `${b.name} · Instrument`,
+        title: `${b.name} parameters`,
+        body: `Part: ${part.label}. ${b.vendor ?? ""} ${b.format ?? ""}. Plugin params land here as cascaded controls — global default at Rig level, Show/Song/Patch overrides surfaced inline.`,
+      }
+    }
+    if (b.kind === "effect") {
+      return {
+        label: `${b.name} · Effect`,
+        title: `${b.name} parameters`,
+        body: `Part: ${part.label}. ${b.vendor ?? ""} ${b.format ?? ""}. Bypass / wet-dry / per-param overrides here. Reorder by dragging in the chain.`,
+      }
+    }
+    if (b.kind === "builtin-effect") {
+      return {
+        label: `${b.name} · Built-in`,
+        title: b.name,
+        body: `Part: ${part.label}. Built-in DSP. No external plugin dependency. Bypassable, removable.`,
+      }
+    }
+  }
+  return {
+    label: "Patch · Verse split",
+    title: "Patch properties",
+    body: "Compound patch with 2 parts (Bass + Rhodes EP). Click any block in the signal chain to see its parameters.",
+  }
+}
+
+function InspectorForMode({
+  mode,
+  selectedBlockId,
+}: {
+  mode: AppMode
+  selectedBlockId?: string
+}) {
+  if (mode === "setup") {
     return (
-      <InspectorFrame label="Patch · Verse split">
+      <InspectorFrame label="Selection">
         <Placeholder
-          title="Patch properties"
-          body="Compound patch with 2 parts (Wurli Bass + Rhodes EP). Selecting a part or a plugin in the signal chain populates its parameters here."
+          title="Rig / Show properties"
+          body="Selecting a hardware device or a Show-level setting populates its config here."
         />
+      </InspectorFrame>
+    )
+  }
+  if (mode === "program") {
+    const { label, title, body } = blockInspectorContent(selectedBlockId)
+    return (
+      <InspectorFrame label={label}>
+        <Placeholder title={title} body={body} />
       </InspectorFrame>
     )
   }
@@ -336,11 +439,11 @@ function InspectorForMode({ mode }: { mode: AppMode }) {
 // Stories
 // =============================================================================
 
-export const Program: Story = {
-  name: "Program mode",
+export const Setup: Story = {
+  name: "Setup mode",
   render: () => {
     const [nav, setNav] = React.useState<NavId>("outline")
-    const [mode, setMode] = React.useState<AppMode>("program")
+    const [mode, setMode] = React.useState<AppMode>("setup")
     return (
       <Shell
         nav={nav}
@@ -351,7 +454,31 @@ export const Program: Story = {
         songName="My Shot"
         contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
         inspector={<InspectorForMode mode={mode} />}
-        canvas={<CanvasFor mode={mode} songName="My Shot" patchName="Verse split" />}
+        canvas={<CanvasFor mode={mode} onSelectBlock={() => {}} />}
+      />
+    )
+  },
+}
+
+export const Program: Story = {
+  name: "Program mode (signal chain)",
+  render: () => {
+    const [nav, setNav] = React.useState<NavId>("outline")
+    const [mode, setMode] = React.useState<AppMode>("program")
+    const [selectedBlockId, setSelectedBlockId] = React.useState<string | undefined>("wurli")
+    return (
+      <Shell
+        nav={nav}
+        setNav={setNav}
+        mode={mode}
+        setMode={setMode}
+        showName="Hamilton — 2026 Tour"
+        songName="My Shot"
+        contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
+        inspector={<InspectorForMode mode={mode} selectedBlockId={selectedBlockId} />}
+        canvas={
+          <CanvasFor mode={mode} selectedBlockId={selectedBlockId} onSelectBlock={setSelectedBlockId} />
+        }
       />
     )
   },
@@ -376,7 +503,7 @@ export const Perform: Story = {
           songName="My Shot"
           contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
           inspector={<InspectorForMode mode={mode} />}
-          canvas={<CanvasFor mode={mode} songName="My Shot" patchName="Verse split" />}
+          canvas={<CanvasFor mode={mode} onSelectBlock={() => {}} />}
         />
         {live && (
           <LiveFullscreen

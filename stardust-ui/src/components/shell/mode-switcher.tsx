@@ -1,8 +1,8 @@
 import * as React from "react"
-import { PencilLine, Play } from "lucide-react"
+import { PencilLine, Play, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export type AppMode = "program" | "perform"
+export type AppMode = "setup" | "program" | "perform"
 
 export interface ModeSwitcherProps {
   mode: AppMode
@@ -11,12 +11,13 @@ export interface ModeSwitcherProps {
 }
 
 /**
- * Two-mode switcher. Two mental states, no more.
+ * Three top-level modes:
  *
- *   - Program — preparation: setlists, patches, signal chains, plugins,
- *     mappings. Everything done before the show.
- *   - Perform — the show: contains the Live canvas editor and the
- *     "Go Live" toggle. Going Live = fullscreen takeover.
+ *   - Setup   — hardware rig + show metadata + top-level show settings.
+ *               The "what" and "where" before patches exist.
+ *   - Program — patches, signal chains, plugins, MIDI mappings.
+ *               The show content.
+ *   - Perform — layout editor (default) + "Go Live" → fullscreen.
  */
 export function ModeSwitcher({ mode, onChange, className }: ModeSwitcherProps) {
   return (
@@ -28,6 +29,12 @@ export function ModeSwitcher({ mode, onChange, className }: ModeSwitcherProps) {
       role="tablist"
       aria-label="Mode"
     >
+      <Segment
+        active={mode === "setup"}
+        onClick={() => onChange?.("setup")}
+        icon={<Wrench className="size-3.5" />}
+        label="Setup"
+      />
       <Segment
         active={mode === "program"}
         onClick={() => onChange?.("program")}
