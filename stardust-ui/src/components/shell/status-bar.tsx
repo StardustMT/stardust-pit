@@ -82,9 +82,7 @@ export function StatusBar({
         {transposeSemitones > 0 ? "+" : ""}
         {transposeSemitones} st
       </Cell>
-
-      <div className="flex-1" />
-
+      <Separator />
       <Cell icon={<Cpu className="size-3" />} title="CPU">
         <span
           className={cn(

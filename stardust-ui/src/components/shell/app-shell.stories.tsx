@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
-import { LayoutGrid, PencilLine, Play, Sparkles } from "lucide-react"
+import { Maximize2, Sparkles, X } from "lucide-react"
 import { AppMenuBar } from "./app-menu-bar"
 import { NavRail, type NavId } from "./nav-rail"
 import { ModeSwitcher, type AppMode } from "./mode-switcher"
 import { StatusBar } from "./status-bar"
 import { ShowOutline } from "@/components/widgets/show-outline"
+import { Button } from "@/components/ui/button"
 
 const meta: Meta = {
   title: "Shell/App Shell",
@@ -108,26 +109,61 @@ function InspectorFrame({ label, children }: { label: string; children: React.Re
   )
 }
 
+function Placeholder({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/30 p-6 text-center text-muted-foreground">
+      <div className="text-[10px] uppercase tracking-[0.18em]">{title}</div>
+      <div className="max-w-sm text-sm leading-relaxed">{body}</div>
+    </div>
+  )
+}
+
+function navLabel(id: NavId): string {
+  switch (id) {
+    case "outline":
+      return "Show outline"
+    case "library":
+      return "Patches"
+    case "instruments":
+      return "Instruments"
+    case "effects":
+      return "Effects"
+    case "midi":
+      return "MIDI"
+    case "audio":
+      return "Audio"
+    case "shows":
+      return "Shows"
+    case "settings":
+      return "Settings"
+  }
+}
+
 function Shell({
   nav,
   setNav,
   mode,
   setMode,
+  perform,
   contextPanel,
   inspector,
   canvas,
   showName,
   songName,
+  onGoLive,
 }: {
   nav: NavId
   setNav: (n: NavId) => void
   mode: AppMode
   setMode: (m: AppMode) => void
+  /** When true and mode === "perform", render the Go Live affordance */
+  perform?: boolean
   contextPanel: React.ReactNode
   inspector: React.ReactNode
   canvas: React.ReactNode
   showName?: string
   songName?: string
+  onGoLive?: () => void
 }) {
   return (
     <div className="dark grid h-screen w-screen grid-rows-[auto_auto_1fr_auto] bg-background text-foreground">
@@ -150,7 +186,12 @@ function Shell({
             <span className="text-foreground">{songName ?? "—"}</span>
           </nav>
         </div>
-        <ModeBadge mode={mode} />
+        {perform && (
+          <Button onClick={onGoLive} className="gap-2">
+            <Maximize2 className="size-4" />
+            Go Live
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-[3.5rem_280px_1fr_320px] overflow-hidden">
@@ -176,64 +217,76 @@ function Shell({
   )
 }
 
-function ModeBadge({ mode }: { mode: AppMode }) {
-  const tone =
-    mode === "live"
-      ? "border-primary/40 bg-primary/15 text-primary"
-      : mode === "layout"
-        ? "border-chart-2/40 bg-chart-2/10 text-chart-2"
-        : "border-border bg-card text-muted-foreground"
-  const Icon = mode === "live" ? Play : mode === "layout" ? LayoutGrid : PencilLine
-  const label =
-    mode === "live"
-      ? "Live · locked"
-      : mode === "layout"
-        ? "Layout · editing canvas"
-        : "Edit · editing patches"
+function LiveFullscreen({
+  onExit,
+  showName,
+  songName,
+}: {
+  onExit: () => void
+  showName: string
+  songName: string
+}) {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onExit()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onExit])
+
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tone}`}
-    >
-      <Icon className="size-3" />
-      {label}
-    </span>
+    <div className="dark fixed inset-0 z-50 grid grid-cols-[320px_1fr] gap-3 bg-background p-3 text-foreground">
+      <ShowOutline
+        showName={showName}
+        songs={HAMILTON_ACT_ONE}
+        currentSongId="3"
+        currentPatchId="3.2"
+        mode="live"
+        className="h-full"
+      />
+      <div className="relative flex h-full flex-col items-center justify-center rounded-xl border border-primary/30 bg-card/40">
+        <div className="text-xs uppercase tracking-[0.2em] text-primary">Live · fullscreen</div>
+        <div className="mt-2 text-2xl font-semibold tracking-tight">{showName}</div>
+        <div className="mt-1 text-lg text-muted-foreground">{songName}</div>
+        <div className="mt-8 max-w-md rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          The configured Live canvas renders here. App chrome (menu bar, nav rail, status
+          bar, inspector) is hidden so the player's attention is on the canvas only.
+          <br />
+          <br />
+          Exit Live with{" "}
+          <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs">Esc</kbd>{" "}
+          or the button.
+        </div>
+        <button
+          onClick={onExit}
+          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3.5" />
+          Exit Live
+        </button>
+      </div>
+    </div>
   )
 }
 
-function CanvasPlaceholder({
-  mode,
-  songName,
-  patchName,
-}: {
-  mode: AppMode
-  songName?: string
-  patchName?: string
-}) {
-  if (mode === "edit") {
+function CanvasFor({ mode, songName, patchName }: { mode: AppMode; songName?: string; patchName?: string }) {
+  if (mode === "program") {
     return (
       <Placeholder
-        title="Edit canvas"
+        title="Program canvas"
         body={`Selected: ${songName ?? "—"} → ${patchName ?? "—"}. Patch signal chain (Instrument → FX → Output) lands here. Click a block to surface its parameters in the Inspector.`}
-      />
-    )
-  }
-  if (mode === "layout") {
-    return (
-      <Placeholder
-        title="Layout canvas"
-        body="Drag-and-resize widget grid. Default layout is Show-wide; you can override per Song or Patch. Widget palette docked on the left context panel, selected-widget config in the Inspector."
       />
     )
   }
   return (
     <Placeholder
-      title="Live canvas"
-      body="Renders the configured layout for the current Show / Song / Patch. Locked while Live mode is active. Interaction is via keys, footswitches, and configured widgets — not the canvas itself."
+      title="Perform · layout editor"
+      body="Drag-and-resize widget grid for the Live canvas. Default layout is Show-wide; override per Song / Patch via the Inspector. Click Go Live (top right) to fullscreen this layout."
     />
   )
 }
 
-function ContextPanelForMode({ nav, mode }: { nav: NavId; mode: AppMode }) {
+function ContextPanelForMode({ nav }: { nav: NavId; mode: AppMode }) {
   if (nav === "outline") {
     return (
       <ContextPanelFrame label="Show outline">
@@ -242,7 +295,7 @@ function ContextPanelForMode({ nav, mode }: { nav: NavId; mode: AppMode }) {
           songs={HAMILTON_ACT_ONE}
           currentSongId="3"
           currentPatchId="3.2"
-          mode={mode === "live" ? "live" : "edit"}
+          mode="edit"
           className="h-full"
         />
       </ContextPanelFrame>
@@ -259,7 +312,7 @@ function ContextPanelForMode({ nav, mode }: { nav: NavId; mode: AppMode }) {
 }
 
 function InspectorForMode({ mode }: { mode: AppMode }) {
-  if (mode === "edit") {
+  if (mode === "program") {
     return (
       <InspectorFrame label="Patch · Verse split">
         <Placeholder
@@ -269,52 +322,25 @@ function InspectorForMode({ mode }: { mode: AppMode }) {
       </InspectorFrame>
     )
   }
-  if (mode === "layout") {
-    return (
-      <InspectorFrame label="No widget selected">
-        <Placeholder
-          title="Widget properties"
-          body="Click a widget on the canvas to configure it (size, level, controller filter). Cascade indicators show whether the setting is inherited from Show / Song / Patch."
-        />
-      </InspectorFrame>
-    )
-  }
   return (
-    <InspectorFrame label="Auto-collapsed">
+    <InspectorFrame label="No widget selected">
       <Placeholder
-        title="Hidden during Live"
-        body="Inspector auto-collapses in Live mode — selection-driven affordances aren't useful while playing. You can show it manually via View menu."
+        title="Widget properties"
+        body="Click a widget on the Perform canvas to configure it (size, level, controller filter). Cascade indicators show whether the setting is inherited from Show / Song / Patch."
       />
     </InspectorFrame>
   )
 }
 
-function navLabel(id: NavId): string {
-  switch (id) {
-    case "outline":
-      return "Show outline"
-    case "library":
-      return "Patches"
-    case "instruments":
-      return "Instruments"
-    case "effects":
-      return "Effects"
-    case "midi":
-      return "MIDI"
-    case "audio":
-      return "Audio"
-    case "shows":
-      return "Shows"
-    case "settings":
-      return "Settings"
-  }
-}
+// =============================================================================
+// Stories
+// =============================================================================
 
-export const Edit: Story = {
-  name: "Edit mode",
+export const Program: Story = {
+  name: "Program mode",
   render: () => {
     const [nav, setNav] = React.useState<NavId>("outline")
-    const [mode, setMode] = React.useState<AppMode>("edit")
+    const [mode, setMode] = React.useState<AppMode>("program")
     return (
       <Shell
         nav={nav}
@@ -325,59 +351,62 @@ export const Edit: Story = {
         songName="My Shot"
         contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
         inspector={<InspectorForMode mode={mode} />}
-        canvas={<CanvasPlaceholder mode={mode} songName="My Shot" patchName="Verse split" />}
+        canvas={<CanvasFor mode={mode} songName="My Shot" patchName="Verse split" />}
       />
     )
   },
 }
 
-export const Layout: Story = {
-  name: "Layout mode",
+export const Perform: Story = {
+  name: "Perform mode (layout editor)",
   render: () => {
     const [nav, setNav] = React.useState<NavId>("outline")
-    const [mode, setMode] = React.useState<AppMode>("layout")
+    const [mode, setMode] = React.useState<AppMode>("perform")
+    const [live, setLive] = React.useState(false)
     return (
-      <Shell
-        nav={nav}
-        setNav={setNav}
-        mode={mode}
-        setMode={setMode}
-        showName="Hamilton — 2026 Tour"
-        songName="My Shot"
-        contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
-        inspector={<InspectorForMode mode={mode} />}
-        canvas={<CanvasPlaceholder mode={mode} songName="My Shot" patchName="Verse split" />}
-      />
+      <>
+        <Shell
+          nav={nav}
+          setNav={setNav}
+          mode={mode}
+          setMode={setMode}
+          perform
+          onGoLive={() => setLive(true)}
+          showName="Hamilton — 2026 Tour"
+          songName="My Shot"
+          contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
+          inspector={<InspectorForMode mode={mode} />}
+          canvas={<CanvasFor mode={mode} songName="My Shot" patchName="Verse split" />}
+        />
+        {live && (
+          <LiveFullscreen
+            showName="Hamilton — 2026 Tour"
+            songName="My Shot"
+            onExit={() => setLive(false)}
+          />
+        )}
+      </>
     )
   },
 }
 
 export const Live: Story = {
-  name: "Live mode",
+  name: "Live (fullscreen takeover)",
   render: () => {
-    const [nav, setNav] = React.useState<NavId>("outline")
-    const [mode, setMode] = React.useState<AppMode>("live")
+    const [exited, setExited] = React.useState(false)
+    if (exited) {
+      return (
+        <div className="dark grid h-screen w-screen place-items-center bg-background text-muted-foreground">
+          Exited Live. (In the real app this would return to Perform mode with chrome back.)
+        </div>
+      )
+    }
     return (
-      <Shell
-        nav={nav}
-        setNav={setNav}
-        mode={mode}
-        setMode={setMode}
+      <LiveFullscreen
         showName="Hamilton — 2026 Tour"
         songName="My Shot"
-        contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
-        inspector={<InspectorForMode mode={mode} />}
-        canvas={<CanvasPlaceholder mode={mode} songName="My Shot" patchName="Verse split" />}
+        onExit={() => setExited(true)}
       />
     )
   },
-}
-
-function Placeholder({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/30 p-6 text-center text-muted-foreground">
-      <div className="text-[10px] uppercase tracking-[0.18em]">{title}</div>
-      <div className="max-w-sm text-sm leading-relaxed">{body}</div>
-    </div>
-  )
 }

@@ -105,7 +105,7 @@ export const EditMode: StoryObj<typeof ShowOutline> = {
 }
 
 export const LiveMode: StoryObj<typeof ShowOutline> = {
-  name: "Live mode (read-only)",
+  name: "Live mode (All / Current scope toggle)",
   render: () => (
     <div className="dark h-screen w-[320px] bg-background p-4">
       <ShowOutline

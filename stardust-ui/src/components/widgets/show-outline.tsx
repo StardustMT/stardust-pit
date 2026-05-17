@@ -38,7 +38,7 @@ export interface ShowOutlineProps {
   currentPatchId: string
   /** Per-Show terminology override */
   songLabel?: string
-  /** "edit" = collapsible. "live" = read-only, current song expanded only */
+  /** "edit" = collapsible. "live" = read-only with All / Current scope toggle */
   mode?: "edit" | "live"
   /** Initially expanded song ids (edit mode only). Defaults to current. */
   defaultExpandedSongIds?: string[]
@@ -62,6 +62,9 @@ export function ShowOutline({
   const [expanded, setExpanded] = React.useState<Set<string>>(
     () => new Set(defaultExpandedSongIds ?? [currentSongId]),
   )
+  // Live-only focus toggle: "all" = every song listed, only current's patches
+  // visible; "current" = only the current song with its patches visible.
+  const [liveScope, setLiveScope] = React.useState<"all" | "current">("all")
 
   const toggleSong = (id: string) => {
     setExpanded((prev) => {
@@ -73,22 +76,45 @@ export function ShowOutline({
   }
 
   const isLive = mode === "live"
+  const visibleSongs =
+    isLive && liveScope === "current"
+      ? songs.filter((s) => s.id === currentSongId)
+      : songs
 
   return (
     <div className={cn("flex h-full flex-col rounded-xl border bg-card", className)}>
-      <header className="border-b px-3 py-2.5">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {songLabel}s
+      <header className="flex items-end justify-between gap-2 border-b px-3 py-2.5">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {songLabel}s
+          </div>
+          <div className="truncate text-sm font-semibold">{showName}</div>
         </div>
-        <div className="truncate text-sm font-semibold">{showName}</div>
+        {isLive && (
+          <div
+            role="radiogroup"
+            aria-label="Outline scope"
+            className="inline-flex shrink-0 items-center rounded-md border bg-muted p-0.5 text-[10px]"
+          >
+            <ScopeButton
+              active={liveScope === "all"}
+              onClick={() => setLiveScope("all")}
+            >
+              All
+            </ScopeButton>
+            <ScopeButton
+              active={liveScope === "current"}
+              onClick={() => setLiveScope("current")}
+            >
+              Current
+            </ScopeButton>
+          </div>
+        )}
       </header>
 
       <ol className="flex-1 overflow-y-auto p-1.5">
-        {songs.map((s) => {
+        {visibleSongs.map((s) => {
           const isCurrent = s.id === currentSongId
-          // Live mode: only the current song shows its patches; other songs
-          // render collapsed and non-interactive. Edit mode: respect the
-          // user's expand/collapse state.
           const showPatches = isLive ? isCurrent : expanded.has(s.id)
           return (
             <li key={s.id} className="mb-0.5">
@@ -101,7 +127,12 @@ export function ShowOutline({
                 onPick={() => onPickSong?.(s.id)}
               />
               {showPatches && (
-                <ol className="ml-7 mt-0.5 space-y-px border-l border-border pl-1">
+                <ol
+                  className={cn(
+                    "mt-0.5 space-y-px border-l border-border pl-1",
+                    isLive ? "ml-3" : "ml-7",
+                  )}
+                >
                   {s.patches.map((p, i) => {
                     const isCurrentPatch = isCurrent && p.id === currentPatchId
                     const currentPatchIndex = s.patches.findIndex(
@@ -133,6 +164,33 @@ export function ShowOutline({
   )
 }
 
+function ScopeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      className={cn(
+        "rounded px-2 py-0.5 font-medium uppercase tracking-wider transition-colors",
+        active
+          ? "bg-card text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 function SongRow({
   song,
   expanded,
@@ -155,7 +213,7 @@ function SongRow({
         current ? "bg-primary/15" : interactive && "hover:bg-accent",
       )}
     >
-      {interactive ? (
+      {interactive && (
         <button
           type="button"
           onClick={onToggle}
@@ -171,8 +229,6 @@ function SongRow({
             <ChevronRight className="size-3.5" />
           )}
         </button>
-      ) : (
-        <span aria-hidden className="size-5" />
       )}
       <button
         type="button"
@@ -234,22 +290,19 @@ function PatchRow({
       >
         {patch.number}
       </span>
-      <span className="min-w-0 flex-1 truncate">{patch.name}</span>
-      {patch.compound && (
-        <Layers
-          className={cn(
-            "size-3 shrink-0",
-            current ? "text-primary-foreground/80" : "text-muted-foreground",
-          )}
-        />
-      )}
-      {current && (
-        <span className="font-mono text-[9px] uppercase tracking-wider opacity-80">Now</span>
-      )}
+      <span className="min-w-0 flex-1 truncate">
+        {patch.name}
+        {patch.compound && (
+          <Layers
+            className={cn(
+              "ml-1 inline size-3 align-text-bottom",
+              current ? "text-primary-foreground/80" : "text-muted-foreground",
+            )}
+          />
+        )}
+      </span>
       {next && (
-        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-          Next
-        </span>
+        <span className="shrink-0 text-[10px] italic text-muted-foreground">next</span>
       )}
     </button>
   )
