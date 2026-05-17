@@ -1,51 +1,52 @@
 import * as React from "react"
 import {
-  AudioLines,
+  Boxes,
   Cable,
-  Cog,
   Folder,
   Library,
   ListTree,
   Music4,
-  Plug,
   Settings2,
   Sparkles,
+  Wrench,
   type LucideIcon,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 export type NavId =
+  // Setup mode
+  | "rig"
+  | "show-meta"
+  // Program mode
   | "outline"
-  | "library"
+  | "patches"
   | "instruments"
   | "effects"
   | "midi"
-  | "audio"
+  // Perform mode
+  | "widgets"
+  // Cross-mode
   | "shows"
   | "settings"
 
+export type AppMode = "setup" | "program" | "perform"
+
 export interface NavRailProps {
   active: NavId
+  mode?: AppMode
   onSelect?: (id: NavId) => void
   className?: string
 }
 
-const TOP_ITEMS: Array<{ id: NavId; label: string; icon: LucideIcon }> = [
-  { id: "outline", label: "Show Outline", icon: ListTree },
-  { id: "library", label: "Patches", icon: Library },
-  { id: "instruments", label: "Instruments", icon: Music4 },
-  { id: "effects", label: "Effects", icon: Sparkles },
-  { id: "midi", label: "MIDI", icon: Cable },
-  { id: "audio", label: "Audio", icon: AudioLines },
-]
-
-const BOTTOM_ITEMS: Array<{ id: NavId; label: string; icon: LucideIcon }> = [
-  { id: "shows", label: "Shows", icon: Folder },
-  { id: "settings", label: "Settings", icon: Settings2 },
-]
-
-export function NavRail({ active, onSelect, className }: NavRailProps) {
+/**
+ * Mode-aware nav rail. Items change per mode — Setup shows hardware-y
+ * destinations, Program shows show-content destinations, Perform shows
+ * playback-time destinations. Shows / Settings are cross-mode and live
+ * at the bottom.
+ */
+export function NavRail({ active, mode = "program", onSelect, className }: NavRailProps) {
+  const top = ITEMS_BY_MODE[mode]
   return (
     <TooltipProvider delayDuration={300}>
       <nav
@@ -55,23 +56,13 @@ export function NavRail({ active, onSelect, className }: NavRailProps) {
         )}
       >
         <ul className="flex flex-col items-center gap-1">
-          {TOP_ITEMS.map((it) => (
-            <NavItem
-              key={it.id}
-              item={it}
-              active={active === it.id}
-              onSelect={onSelect}
-            />
+          {top.map((it) => (
+            <NavItem key={it.id} item={it} active={active === it.id} onSelect={onSelect} />
           ))}
         </ul>
         <ul className="flex flex-col items-center gap-1">
           {BOTTOM_ITEMS.map((it) => (
-            <NavItem
-              key={it.id}
-              item={it}
-              active={active === it.id}
-              onSelect={onSelect}
-            />
+            <NavItem key={it.id} item={it} active={active === it.id} onSelect={onSelect} />
           ))}
         </ul>
       </nav>
@@ -79,12 +70,37 @@ export function NavRail({ active, onSelect, className }: NavRailProps) {
   )
 }
 
+type Item = { id: NavId; label: string; icon: LucideIcon }
+
+const ITEMS_BY_MODE: Record<AppMode, Item[]> = {
+  setup: [
+    { id: "rig", label: "Rig (hardware)", icon: Wrench },
+    { id: "show-meta", label: "Show metadata", icon: Folder },
+  ],
+  program: [
+    { id: "outline", label: "Show outline", icon: ListTree },
+    { id: "patches", label: "Patch library", icon: Library },
+    { id: "instruments", label: "Instruments", icon: Music4 },
+    { id: "effects", label: "Effects", icon: Sparkles },
+    { id: "midi", label: "MIDI bindings", icon: Cable },
+  ],
+  perform: [
+    { id: "outline", label: "Show outline", icon: ListTree },
+    { id: "widgets", label: "Widget palette", icon: Boxes },
+  ],
+}
+
+const BOTTOM_ITEMS: Item[] = [
+  { id: "shows", label: "Shows", icon: Folder },
+  { id: "settings", label: "Settings", icon: Settings2 },
+]
+
 function NavItem({
   item,
   active,
   onSelect,
 }: {
-  item: { id: NavId; label: string; icon: LucideIcon }
+  item: Item
   active: boolean
   onSelect?: (id: NavId) => void
 }) {
@@ -114,4 +130,15 @@ function NavItem({
       </Tooltip>
     </li>
   )
+}
+
+/** Pick a sensible default nav id for a given mode. */
+export function defaultNavForMode(mode: AppMode): NavId {
+  return ITEMS_BY_MODE[mode][0].id
+}
+
+/** Look up the human label for any nav id. */
+export function navLabel(id: NavId): string {
+  const all = [...Object.values(ITEMS_BY_MODE).flat(), ...BOTTOM_ITEMS]
+  return all.find((i) => i.id === id)?.label ?? id
 }

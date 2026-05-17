@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -32,18 +32,26 @@ export type OutlineSong = {
 export interface ShowOutlineProps {
   showName: string
   songs: OutlineSong[]
-  /** Currently active song id */
-  currentSongId: string
-  /** Currently active patch id */
-  currentPatchId: string
+  /** Currently active song id (only shown specially in live mode) */
+  currentSongId?: string
+  /** Currently active patch id (only shown specially in live mode) */
+  currentPatchId?: string
   /** Per-Show terminology override */
   songLabel?: string
-  /** "edit" = collapsible. "live" = read-only with All / Current scope toggle */
-  mode?: "edit" | "live"
-  /** Initially expanded song ids (edit mode only). Defaults to current. */
+  /**
+   * Mode:
+   *   - "program": collapsible, +/- buttons for adding songs / patches.
+   *     No "now" / "next" labels — Program is a menu, not a playback view.
+   *   - "live": read-only with All / Current scope toggle. "Now" via primary
+   *     bg on the current patch; "next" inline label on the following patch.
+   */
+  mode?: "program" | "live"
+  /** Initially expanded song ids (program mode only). Defaults to all. */
   defaultExpandedSongIds?: string[]
   onPickSong?: (id: string) => void
   onPickPatch?: (songId: string, patchId: string) => void
+  onAddSong?: () => void
+  onAddPatch?: (songId: string) => void
   className?: string
 }
 
@@ -53,18 +61,21 @@ export function ShowOutline({
   currentSongId,
   currentPatchId,
   songLabel = "Song",
-  mode = "edit",
+  mode = "program",
   defaultExpandedSongIds,
   onPickSong,
   onPickPatch,
+  onAddSong,
+  onAddPatch,
   className,
 }: ShowOutlineProps) {
   const [expanded, setExpanded] = React.useState<Set<string>>(
-    () => new Set(defaultExpandedSongIds ?? [currentSongId]),
+    () => new Set(defaultExpandedSongIds ?? songs.map((s) => s.id)),
   )
-  // Live-only focus toggle: "all" = every song listed, only current's patches
-  // visible; "current" = only the current song with its patches visible.
-  const [liveScope, setLiveScope] = React.useState<"all" | "current">("all")
+  // Live-only scope toggle.
+  //   - "current": all songs listed, only the current song's patches expanded.
+  //   - "all":     all songs listed AND all patches for every song expanded.
+  const [liveScope, setLiveScope] = React.useState<"all" | "current">("current")
 
   const toggleSong = (id: string) => {
     setExpanded((prev) => {
@@ -76,10 +87,15 @@ export function ShowOutline({
   }
 
   const isLive = mode === "live"
-  const visibleSongs =
-    isLive && liveScope === "current"
-      ? songs.filter((s) => s.id === currentSongId)
-      : songs
+
+  function shouldShowPatches(songId: string) {
+    if (isLive) {
+      // Always list every song. Just decide which to expand.
+      if (liveScope === "all") return true
+      return songId === currentSongId
+    }
+    return expanded.has(songId)
+  }
 
   return (
     <div className={cn("flex h-full flex-col rounded-xl border bg-card", className)}>
@@ -113,9 +129,9 @@ export function ShowOutline({
       </header>
 
       <ol className="flex-1 overflow-y-auto p-1.5">
-        {visibleSongs.map((s) => {
-          const isCurrent = s.id === currentSongId
-          const showPatches = isLive ? isCurrent : expanded.has(s.id)
+        {songs.map((s) => {
+          const isCurrent = isLive && s.id === currentSongId
+          const showPatches = shouldShowPatches(s.id)
           return (
             <li key={s.id} className="mb-0.5">
               <SongRow
@@ -123,8 +139,10 @@ export function ShowOutline({
                 expanded={showPatches}
                 current={isCurrent}
                 interactive={!isLive}
+                showAddPatch={!isLive && !!onAddPatch}
                 onToggle={() => toggleSong(s.id)}
                 onPick={() => onPickSong?.(s.id)}
+                onAddPatch={() => onAddPatch?.(s.id)}
               />
               {showPatches && (
                 <ol
@@ -134,11 +152,12 @@ export function ShowOutline({
                   )}
                 >
                   {s.patches.map((p, i) => {
-                    const isCurrentPatch = isCurrent && p.id === currentPatchId
+                    const isCurrentPatch = isLive && isCurrent && p.id === currentPatchId
                     const currentPatchIndex = s.patches.findIndex(
                       (q) => q.id === currentPatchId,
                     )
                     const isNextPatch =
+                      isLive &&
                       isCurrent &&
                       currentPatchIndex !== -1 &&
                       i === currentPatchIndex + 1
@@ -160,6 +179,17 @@ export function ShowOutline({
           )
         })}
       </ol>
+
+      {!isLive && onAddSong && (
+        <button
+          type="button"
+          onClick={onAddSong}
+          className="m-1.5 inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+        >
+          <Plus className="size-3.5" />
+          Add {songLabel.toLowerCase()}
+        </button>
+      )}
     </div>
   )
 }
@@ -196,15 +226,19 @@ function SongRow({
   expanded,
   current,
   interactive,
+  showAddPatch,
   onToggle,
   onPick,
+  onAddPatch,
 }: {
   song: OutlineSong
   expanded: boolean
   current: boolean
   interactive: boolean
+  showAddPatch: boolean
   onToggle: () => void
   onPick: () => void
+  onAddPatch: () => void
 }) {
   return (
     <div
@@ -253,6 +287,19 @@ function SongRow({
           {song.name}
         </span>
       </button>
+      {showAddPatch && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onAddPatch()
+          }}
+          title={`Add patch to ${song.name}`}
+          className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      )}
     </div>
   )
 }
