@@ -1,12 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
-import { Sparkles } from "lucide-react"
+import { LayoutGrid, PencilLine, Play, Sparkles } from "lucide-react"
 import { AppMenuBar } from "./app-menu-bar"
 import { NavRail, type NavId } from "./nav-rail"
 import { ModeSwitcher, type AppMode } from "./mode-switcher"
 import { StatusBar } from "./status-bar"
 import { ShowOutline } from "@/components/widgets/show-outline"
-import { PerformanceLockToggle } from "@/components/widgets/performance-lock-toggle"
 
 const meta: Meta = {
   title: "Shell/App Shell",
@@ -20,8 +19,6 @@ const HAMILTON_ACT_ONE = [
     id: "1",
     number: 1,
     name: "Alexander Hamilton",
-    key: "F#m",
-    length: "4:01",
     patches: [
       { id: "1.1", number: 1, name: "Strings intro" },
       { id: "1.2", number: 2, name: "Verse pad", compound: true },
@@ -34,8 +31,6 @@ const HAMILTON_ACT_ONE = [
     id: "2",
     number: 2,
     name: "Aaron Burr, Sir",
-    key: "D",
-    length: "1:53",
     patches: [
       { id: "2.1", number: 1, name: "Burr's piano" },
       { id: "2.2", number: 2, name: "Group entrance" },
@@ -47,8 +42,6 @@ const HAMILTON_ACT_ONE = [
     id: "3",
     number: 3,
     name: "My Shot",
-    key: "Bbm",
-    length: "5:32",
     patches: [
       { id: "3.1", number: 1, name: "Intro strings" },
       { id: "3.2", number: 2, name: "Verse split", compound: true },
@@ -62,8 +55,6 @@ const HAMILTON_ACT_ONE = [
     id: "4",
     number: 4,
     name: "The Story of Tonight",
-    key: "G",
-    length: "2:21",
     patches: [
       { id: "4.1", number: 1, name: "Pad" },
       { id: "4.2", number: 2, name: "Strings" },
@@ -74,8 +65,6 @@ const HAMILTON_ACT_ONE = [
     id: "5",
     number: 5,
     name: "The Schuyler Sisters",
-    key: "Eb",
-    length: "3:08",
     patches: [
       { id: "5.1", number: 1, name: "Pulse synth" },
       { id: "5.2", number: 2, name: "Verse split", compound: true },
@@ -88,7 +77,6 @@ const HAMILTON_ACT_ONE = [
     id: "6",
     number: 6,
     name: "Farmer Refuted",
-    length: "1:23",
     patches: [
       { id: "6.1", number: 1, name: "Seabury's piano" },
       { id: "6.2", number: 2, name: "Hamilton's response" },
@@ -97,6 +85,28 @@ const HAMILTON_ACT_ONE = [
     ],
   },
 ]
+
+function ContextPanelFrame({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex h-full flex-col gap-2">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </div>
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  )
+}
+
+function InspectorFrame({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex h-full flex-col gap-2">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        Inspector · {label}
+      </div>
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  )
+}
 
 function Shell({
   nav,
@@ -121,7 +131,6 @@ function Shell({
 }) {
   return (
     <div className="dark grid h-screen w-screen grid-rows-[auto_auto_1fr_auto] bg-background text-foreground">
-      {/* App menu bar */}
       <AppMenuBar
         brand={
           <span className="inline-flex items-center gap-1.5">
@@ -131,7 +140,6 @@ function Shell({
         }
       />
 
-      {/* Header band: mode switcher (left) + current show context (center) + Performance Lock (right) */}
       <div className="flex h-12 items-center justify-between border-b bg-background px-3">
         <div className="flex items-center gap-3">
           <ModeSwitcher mode={mode} onChange={setMode} />
@@ -142,18 +150,16 @@ function Shell({
             <span className="text-foreground">{songName ?? "—"}</span>
           </nav>
         </div>
-        <PerformanceLockToggle locked={mode === "live"} onChange={(l) => setMode(l ? "live" : "edit")} />
+        <ModeBadge mode={mode} />
       </div>
 
-      {/* Body: nav rail + context panel + canvas + inspector */}
       <div className="grid grid-cols-[3.5rem_280px_1fr_320px] overflow-hidden">
         <NavRail active={nav} onSelect={setNav} />
-        <aside className="overflow-hidden border-r p-2">{contextPanel}</aside>
+        <aside className="overflow-hidden border-r bg-background p-3">{contextPanel}</aside>
         <main className="overflow-hidden bg-background">{canvas}</main>
-        <aside className="overflow-hidden border-l p-2">{inspector}</aside>
+        <aside className="overflow-hidden border-l bg-background p-3">{inspector}</aside>
       </div>
 
-      {/* Status bar */}
       <StatusBar
         showName={showName}
         songName={songName}
@@ -170,49 +176,142 @@ function Shell({
   )
 }
 
-// =============================================================================
-// Stories
-// =============================================================================
-
-export const Frame: Story = {
-  name: "01 · Empty frame",
-  render: () => {
-    const [nav, setNav] = React.useState<NavId>("outline")
-    const [mode, setMode] = React.useState<AppMode>("edit")
-    return (
-      <Shell
-        nav={nav}
-        setNav={setNav}
-        mode={mode}
-        setMode={setMode}
-        showName="Untitled Show"
-        songName="—"
-        contextPanel={
-          <Placeholder
-            title="Context panel"
-            body="Driven by the nav rail. Pick an icon on the left."
-          />
-        }
-        inspector={
-          <Placeholder
-            title="Inspector"
-            body="Selection-driven. When a patch, instrument, or FX is selected its properties appear here."
-          />
-        }
-        canvas={
-          <Placeholder
-            title="Canvas"
-            body={`Mode-specific content lands here. Currently: ${mode}.`}
-            fullHeight
-          />
-        }
-      />
-    )
-  },
+function ModeBadge({ mode }: { mode: AppMode }) {
+  const tone =
+    mode === "live"
+      ? "border-primary/40 bg-primary/15 text-primary"
+      : mode === "layout"
+        ? "border-chart-2/40 bg-chart-2/10 text-chart-2"
+        : "border-border bg-card text-muted-foreground"
+  const Icon = mode === "live" ? Play : mode === "layout" ? LayoutGrid : PencilLine
+  const label =
+    mode === "live"
+      ? "Live · locked"
+      : mode === "layout"
+        ? "Layout · editing canvas"
+        : "Edit · editing patches"
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tone}`}
+    >
+      <Icon className="size-3" />
+      {label}
+    </span>
+  )
 }
 
-export const WithShowOutline: Story = {
-  name: "02 · With Show Outline (Edit Mode)",
+function CanvasPlaceholder({
+  mode,
+  songName,
+  patchName,
+}: {
+  mode: AppMode
+  songName?: string
+  patchName?: string
+}) {
+  if (mode === "edit") {
+    return (
+      <Placeholder
+        title="Edit canvas"
+        body={`Selected: ${songName ?? "—"} → ${patchName ?? "—"}. Patch signal chain (Instrument → FX → Output) lands here. Click a block to surface its parameters in the Inspector.`}
+      />
+    )
+  }
+  if (mode === "layout") {
+    return (
+      <Placeholder
+        title="Layout canvas"
+        body="Drag-and-resize widget grid. Default layout is Show-wide; you can override per Song or Patch. Widget palette docked on the left context panel, selected-widget config in the Inspector."
+      />
+    )
+  }
+  return (
+    <Placeholder
+      title="Live canvas"
+      body="Renders the configured layout for the current Show / Song / Patch. Locked while Live mode is active. Interaction is via keys, footswitches, and configured widgets — not the canvas itself."
+    />
+  )
+}
+
+function ContextPanelForMode({ nav, mode }: { nav: NavId; mode: AppMode }) {
+  if (nav === "outline") {
+    return (
+      <ContextPanelFrame label="Show outline">
+        <ShowOutline
+          showName="Hamilton — 2026 Tour"
+          songs={HAMILTON_ACT_ONE}
+          currentSongId="3"
+          currentPatchId="3.2"
+          mode={mode === "live" ? "live" : "edit"}
+          className="h-full"
+        />
+      </ContextPanelFrame>
+    )
+  }
+  return (
+    <ContextPanelFrame label={navLabel(nav)}>
+      <Placeholder
+        title={navLabel(nav)}
+        body={`The ${navLabel(nav).toLowerCase()} panel lands in a future iteration.`}
+      />
+    </ContextPanelFrame>
+  )
+}
+
+function InspectorForMode({ mode }: { mode: AppMode }) {
+  if (mode === "edit") {
+    return (
+      <InspectorFrame label="Patch · Verse split">
+        <Placeholder
+          title="Patch properties"
+          body="Compound patch with 2 parts (Wurli Bass + Rhodes EP). Selecting a part or a plugin in the signal chain populates its parameters here."
+        />
+      </InspectorFrame>
+    )
+  }
+  if (mode === "layout") {
+    return (
+      <InspectorFrame label="No widget selected">
+        <Placeholder
+          title="Widget properties"
+          body="Click a widget on the canvas to configure it (size, level, controller filter). Cascade indicators show whether the setting is inherited from Show / Song / Patch."
+        />
+      </InspectorFrame>
+    )
+  }
+  return (
+    <InspectorFrame label="Auto-collapsed">
+      <Placeholder
+        title="Hidden during Live"
+        body="Inspector auto-collapses in Live mode — selection-driven affordances aren't useful while playing. You can show it manually via View menu."
+      />
+    </InspectorFrame>
+  )
+}
+
+function navLabel(id: NavId): string {
+  switch (id) {
+    case "outline":
+      return "Show outline"
+    case "library":
+      return "Patches"
+    case "instruments":
+      return "Instruments"
+    case "effects":
+      return "Effects"
+    case "midi":
+      return "MIDI"
+    case "audio":
+      return "Audio"
+    case "shows":
+      return "Shows"
+    case "settings":
+      return "Settings"
+  }
+}
+
+export const Edit: Story = {
+  name: "Edit mode",
   render: () => {
     const [nav, setNav] = React.useState<NavId>("outline")
     const [mode, setMode] = React.useState<AppMode>("edit")
@@ -224,35 +323,37 @@ export const WithShowOutline: Story = {
         setMode={setMode}
         showName="Hamilton — 2026 Tour"
         songName="My Shot"
-        contextPanel={
-          <ShowOutline
-            showName="Hamilton — 2026 Tour"
-            songs={HAMILTON_ACT_ONE}
-            currentSongId="3"
-            currentPatchId="3.2"
-            className="h-full"
-          />
-        }
-        inspector={
-          <Placeholder
-            title="Inspector"
-            body="Selection: Patch 3.2 · Verse split. The patch's instruments, effects, and parameters will land here once the signal-chain view is built."
-          />
-        }
-        canvas={
-          <Placeholder
-            title="Edit canvas"
-            body="The patch editor — signal-chain view (instruments → FX → output) lands here. Or the Layout tab if you switch tabs at the top of the canvas."
-            fullHeight
-          />
-        }
+        contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
+        inspector={<InspectorForMode mode={mode} />}
+        canvas={<CanvasPlaceholder mode={mode} songName="My Shot" patchName="Verse split" />}
       />
     )
   },
 }
 
-export const WithShowOutlineLive: Story = {
-  name: "03 · With Show Outline (Live Mode)",
+export const Layout: Story = {
+  name: "Layout mode",
+  render: () => {
+    const [nav, setNav] = React.useState<NavId>("outline")
+    const [mode, setMode] = React.useState<AppMode>("layout")
+    return (
+      <Shell
+        nav={nav}
+        setNav={setNav}
+        mode={mode}
+        setMode={setMode}
+        showName="Hamilton — 2026 Tour"
+        songName="My Shot"
+        contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
+        inspector={<InspectorForMode mode={mode} />}
+        canvas={<CanvasPlaceholder mode={mode} songName="My Shot" patchName="Verse split" />}
+      />
+    )
+  },
+}
+
+export const Live: Story = {
+  name: "Live mode",
   render: () => {
     const [nav, setNav] = React.useState<NavId>("outline")
     const [mode, setMode] = React.useState<AppMode>("live")
@@ -264,55 +365,18 @@ export const WithShowOutlineLive: Story = {
         setMode={setMode}
         showName="Hamilton — 2026 Tour"
         songName="My Shot"
-        contextPanel={
-          <ShowOutline
-            showName="Hamilton — 2026 Tour"
-            songs={HAMILTON_ACT_ONE}
-            currentSongId="3"
-            currentPatchId="3.2"
-            focusCurrentSong
-            className="h-full"
-          />
-        }
-        inspector={
-          <Placeholder
-            title="Inspector"
-            body="During a show the Inspector typically hides or shows minimal context. Auto-collapses with Performance Lock."
-          />
-        }
-        canvas={
-          <Placeholder
-            title="Live canvas"
-            body="The user-configured Live Mode layout renders here. Widgets are placed and sized in the Edit Mode → Layout tab. Lands in the next iteration."
-            fullHeight
-          />
-        }
+        contextPanel={<ContextPanelForMode nav={nav} mode={mode} />}
+        inspector={<InspectorForMode mode={mode} />}
+        canvas={<CanvasPlaceholder mode={mode} songName="My Shot" patchName="Verse split" />}
       />
     )
   },
 }
 
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
-function Placeholder({
-  title,
-  body,
-  fullHeight,
-}: {
-  title: string
-  body: string
-  fullHeight?: boolean
-}) {
+function Placeholder({ title, body }: { title: string; body: string }) {
   return (
-    <div
-      className={
-        "flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/30 p-6 text-center text-muted-foreground" +
-        (fullHeight ? "" : "")
-      }
-    >
-      <div className="text-[10px] uppercase tracking-[0.2em]">{title}</div>
+    <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/30 p-6 text-center text-muted-foreground">
+      <div className="text-[10px] uppercase tracking-[0.18em]">{title}</div>
       <div className="max-w-sm text-sm leading-relaxed">{body}</div>
     </div>
   )

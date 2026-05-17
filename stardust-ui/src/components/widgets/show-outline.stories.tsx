@@ -13,10 +13,8 @@ const HAMILTON_ACT_ONE = [
     id: "1",
     number: 1,
     name: "Alexander Hamilton",
-    key: "F#m",
-    length: "4:01",
     patches: [
-      { id: "1.1", number: 1, name: "Strings intro", subtitle: "BBC SO" },
+      { id: "1.1", number: 1, name: "Strings intro" },
       { id: "1.2", number: 2, name: "Verse pad", compound: true },
       { id: "1.3", number: 3, name: "Pre-chorus build", compound: true },
       { id: "1.4", number: 4, name: "Chorus brass" },
@@ -27,8 +25,6 @@ const HAMILTON_ACT_ONE = [
     id: "2",
     number: 2,
     name: "Aaron Burr, Sir",
-    key: "D",
-    length: "1:53",
     patches: [
       { id: "2.1", number: 1, name: "Burr's piano" },
       { id: "2.2", number: 2, name: "Group entrance" },
@@ -40,11 +36,9 @@ const HAMILTON_ACT_ONE = [
     id: "3",
     number: 3,
     name: "My Shot",
-    key: "Bbm",
-    length: "5:32",
     patches: [
       { id: "3.1", number: 1, name: "Intro strings" },
-      { id: "3.2", number: 2, name: "Verse split", subtitle: "Wurli + EP", compound: true },
+      { id: "3.2", number: 2, name: "Verse split", compound: true },
       { id: "3.3", number: 3, name: "Pre-chorus lift", compound: true },
       { id: "3.4", number: 4, name: "Chorus brass" },
       { id: "3.5", number: 5, name: "Bridge synth" },
@@ -55,8 +49,6 @@ const HAMILTON_ACT_ONE = [
     id: "4",
     number: 4,
     name: "The Story of Tonight",
-    key: "G",
-    length: "2:21",
     patches: [
       { id: "4.1", number: 1, name: "Pad" },
       { id: "4.2", number: 2, name: "Strings" },
@@ -67,8 +59,6 @@ const HAMILTON_ACT_ONE = [
     id: "5",
     number: 5,
     name: "The Schuyler Sisters",
-    key: "Eb",
-    length: "3:08",
     patches: [
       { id: "5.1", number: 1, name: "Pulse synth" },
       { id: "5.2", number: 2, name: "Verse split", compound: true },
@@ -81,9 +71,8 @@ const HAMILTON_ACT_ONE = [
     id: "6",
     number: 6,
     name: "Farmer Refuted",
-    length: "1:23",
     patches: [
-      { id: "6.1", number: 1, name: "Sebury's piano" },
+      { id: "6.1", number: 1, name: "Seabury's piano" },
       { id: "6.2", number: 2, name: "Hamilton's response" },
       { id: "6.3", number: 3, name: "Tutti" },
       { id: "6.4", number: 4, name: "Out" },
@@ -93,8 +82,6 @@ const HAMILTON_ACT_ONE = [
     id: "7",
     number: 7,
     name: "You'll Be Back",
-    key: "G",
-    length: "3:31",
     patches: [
       { id: "7.1", number: 1, name: "George's piano" },
       { id: "7.2", number: 2, name: "Strings come in" },
@@ -103,7 +90,7 @@ const HAMILTON_ACT_ONE = [
   },
 ]
 
-export const Default: StoryObj<typeof ShowOutline> = {
+export const EditMode: StoryObj<typeof ShowOutline> = {
   render: () => (
     <div className="dark h-screen w-[320px] bg-background p-4">
       <ShowOutline
@@ -111,13 +98,14 @@ export const Default: StoryObj<typeof ShowOutline> = {
         songs={HAMILTON_ACT_ONE}
         currentSongId="3"
         currentPatchId="3.2"
+        mode="edit"
       />
     </div>
   ),
 }
 
-export const FocusCurrentSong: StoryObj<typeof ShowOutline> = {
-  name: "Focus mode (current song only)",
+export const LiveMode: StoryObj<typeof ShowOutline> = {
+  name: "Live mode (read-only)",
   render: () => (
     <div className="dark h-screen w-[320px] bg-background p-4">
       <ShowOutline
@@ -125,7 +113,7 @@ export const FocusCurrentSong: StoryObj<typeof ShowOutline> = {
         songs={HAMILTON_ACT_ONE}
         currentSongId="3"
         currentPatchId="3.2"
-        focusCurrentSong
+        mode="live"
       />
     </div>
   ),
@@ -137,12 +125,12 @@ export const WorshipSet: StoryObj<typeof ShowOutline> = {
       <ShowOutline
         showName="Sunday 17 May"
         songLabel="Song"
+        mode="edit"
         songs={[
           {
             id: "a",
             number: 1,
             name: "Build My Life",
-            key: "C",
             patches: [
               { id: "a.1", number: 1, name: "Pad + acoustic" },
               { id: "a.2", number: 2, name: "Lift" },
@@ -153,7 +141,6 @@ export const WorshipSet: StoryObj<typeof ShowOutline> = {
             id: "b",
             number: 2,
             name: "Goodness of God",
-            key: "D",
             patches: [
               { id: "b.1", number: 1, name: "Verse pad" },
               { id: "b.2", number: 2, name: "Chorus lift", compound: true },
@@ -165,7 +152,6 @@ export const WorshipSet: StoryObj<typeof ShowOutline> = {
             id: "c",
             number: 3,
             name: "Way Maker",
-            key: "E",
             patches: [
               { id: "c.1", number: 1, name: "Intro pad" },
               { id: "c.2", number: 2, name: "Verse synth" },
