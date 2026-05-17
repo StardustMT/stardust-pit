@@ -8,6 +8,7 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-card-raised: var(--card-raised);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
@@ -20,7 +21,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
@@ -28,74 +32,101 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-stage: var(--stage);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
-  --radius: 0.625rem;
+/* ============================================================================
+ * Warm-slate palette (dark default)
+ *
+ * Cool blue-slate background, warm amber/gold accent.
+ * "Stage lighting in a darkened venue" — character without OLED-cold.
+ * Three-tier surface elevation: background → card → card-raised.
+ * ============================================================================
+ */
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+:root {
+  --radius: 0.75rem;
+
+  /* Light mode: warm cream / parchment, not pure white */
+  --background: oklch(0.985 0.005 80);
+  --foreground: oklch(0.22 0.015 264);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.22 0.015 264);
+  --card-raised: oklch(0.99 0.004 80);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --popover-foreground: oklch(0.22 0.015 264);
+  --primary: oklch(0.55 0.16 65);
+  --primary-foreground: oklch(0.98 0.005 80);
+  --secondary: oklch(0.96 0.008 80);
+  --secondary-foreground: oklch(0.22 0.015 264);
+  --muted: oklch(0.94 0.008 80);
+  --muted-foreground: oklch(0.50 0.012 264);
+  --accent: oklch(0.55 0.14 240);
+  --accent-foreground: oklch(0.98 0.005 80);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.98 0.005 80);
+  --success: oklch(0.62 0.14 155);
+  --warning: oklch(0.74 0.17 75);
+  --border: oklch(0.90 0.010 80);
+  --border-strong: oklch(0.80 0.012 264);
+  --input: oklch(0.92 0.010 80);
+  --ring: oklch(0.55 0.16 65);
+  --stage: oklch(0.78 0.150 70);
+
+  --chart-1: oklch(0.65 0.18 65);
+  --chart-2: oklch(0.55 0.16 240);
+  --chart-3: oklch(0.60 0.18 155);
+  --chart-4: oklch(0.60 0.20 350);
+  --chart-5: oklch(0.62 0.18 295);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  /* Dark mode: deep blue-slate, warm accents */
+  --background: oklch(0.22 0.015 264);
+  --foreground: oklch(0.95 0.005 264);
+  --card: oklch(0.27 0.020 264);
+  --card-foreground: oklch(0.95 0.005 264);
+  --card-raised: oklch(0.31 0.022 264);
+  --popover: oklch(0.27 0.020 264);
+  --popover-foreground: oklch(0.95 0.005 264);
+  --primary: oklch(0.78 0.150 70);          /* amber, stage spot */
+  --primary-foreground: oklch(0.20 0.020 70);
+  --secondary: oklch(0.31 0.020 264);
+  --secondary-foreground: oklch(0.95 0.005 264);
+  --muted: oklch(0.30 0.018 264);
+  --muted-foreground: oklch(0.70 0.012 264);
+  --accent: oklch(0.62 0.140 240);          /* cool blue */
+  --accent-foreground: oklch(0.98 0.005 240);
+  --destructive: oklch(0.65 0.220 25);
+  --destructive-foreground: oklch(0.98 0.005 25);
+  --success: oklch(0.70 0.150 155);
+  --warning: oklch(0.78 0.170 75);
+  --border: oklch(0.35 0.020 264);
+  --border-strong: oklch(0.45 0.025 264);
+  --input: oklch(0.35 0.020 264);
+  --ring: oklch(0.78 0.150 70);
+  --stage: oklch(0.78 0.150 70);
+
+  --chart-1: oklch(0.78 0.150 70);
+  --chart-2: oklch(0.65 0.140 240);
+  --chart-3: oklch(0.70 0.150 155);
+  --chart-4: oklch(0.68 0.190 350);
+  --chart-5: oklch(0.70 0.180 295);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+  html, body {
+    @apply h-full bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
 }
