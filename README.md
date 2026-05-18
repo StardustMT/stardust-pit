@@ -6,11 +6,11 @@
 
 A cross-platform alternative to industry staples like MainStage and Gig Performer — designed first for the workflows of MT music directors, but useful for any live keyboard rig.
 
-[![Build status](https://img.shields.io/github/actions/workflow/status/ChaseCondon/Stardust/ci.yml?branch=main&label=build)](https://github.com/ChaseCondon/Stardust/actions)
-[![Release](https://img.shields.io/github/v/release/ChaseCondon/Stardust?include_prereleases&label=release)](https://github.com/ChaseCondon/Stardust/releases)
+[![Build status](https://img.shields.io/github/actions/workflow/status/StardustMT/stardust-pit/ci.yml?branch=main&label=build)](https://github.com/StardustMT/stardust-pit/actions)
+[![Release](https://img.shields.io/github/v/release/StardustMT/stardust-pit?include_prereleases&label=release)](https://github.com/StardustMT/stardust-pit/releases)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL%20v3-blue.svg)](LICENSE)
-[![Wiki](https://img.shields.io/badge/docs-wiki-green.svg)](https://github.com/ChaseCondon/Stardust/wiki)
-[![Discussions](https://img.shields.io/github/discussions/ChaseCondon/Stardust)](https://github.com/ChaseCondon/Stardust/discussions)
+[![Wiki](https://img.shields.io/badge/docs-wiki-green.svg)](https://github.com/StardustMT/stardust-pit/wiki)
+[![Discussions](https://img.shields.io/github/discussions/StardustMT/stardust-pit)](https://github.com/StardustMT/stardust-pit/discussions)
 
 </div>
 
@@ -23,13 +23,13 @@ A cross-platform alternative to industry staples like MainStage and Gig Performe
 
 Stardust is a virtual instrument host built for the stage. It loads your VST3 and CLAP plugins, handles MIDI and audio routing, and wraps them in a control surface designed for live performance — from a single keyboardist's rig to a full pit's worth of programmed sounds.
 
-It runs on macOS and Windows as first-class platforms. The full feature set is documented on the [wiki](https://github.com/ChaseCondon/Stardust/wiki).
+It runs on macOS and Windows as first-class platforms. The full feature set is documented on the [wiki](https://github.com/StardustMT/stardust-pit/wiki).
 
 ## Why it exists
 
 Most existing live-host software is either macOS-only, closed-source, or built around session musician workflows that don't quite fit the realities of running a pit. Stardust started as a side project to scratch those itches — cross-platform from day one, plugin sandboxing so a single crash doesn't kill the show, and a data model (Show → Song → Patch) that mirrors how MDs actually think.
 
-See the [wiki](https://github.com/ChaseCondon/Stardust/wiki/Comparison) for a feature comparison with other hosts.
+See the [wiki](https://github.com/StardustMT/stardust-pit/wiki/Comparison) for a feature comparison with other hosts.
 
 ## Core features
 
@@ -53,7 +53,7 @@ See the [wiki](https://github.com/ChaseCondon/Stardust/wiki/Comparison) for a fe
 
 Once releases are available:
 
-1. Download the latest installer for your platform from [Releases](https://github.com/ChaseCondon/Stardust/releases)
+1. Download the latest installer for your platform from [Releases](https://github.com/StardustMT/stardust-pit/releases)
 2. Run the installer
 3. Open Stardust and follow the first-run setup to pick your audio device and MIDI inputs
 4. Import a show file, or build your first show in Edit Mode
@@ -63,12 +63,12 @@ Once releases are available:
 To run a development build locally:
 
 ```bash
-git clone git@github.com:ChaseCondon/Stardust.git
+git clone git@github.com:StardustMT/stardust-pit.git
 cd Stardust
 cargo tauri dev
 ```
 
-See [Dev Setup](https://github.com/ChaseCondon/Stardust/wiki/Dev-Setup) on the wiki for the full toolchain (Rust, Node, platform-specific audio SDKs).
+See [Dev Setup](https://github.com/StardustMT/stardust-pit/wiki/Dev-Setup) on the wiki for the full toolchain (Rust, Node, platform-specific audio SDKs).
 
 ### Build from source
 
@@ -82,7 +82,7 @@ Artifacts are written to `src-tauri/target/release/bundle/`.
 
 ## Documentation
 
-- **[Project wiki](https://github.com/ChaseCondon/Stardust/wiki)** — architecture, feature pages, decisions, learning materials
+- **[Project wiki](https://github.com/StardustMT/stardust-pit/wiki)** — architecture, feature pages, decisions, learning materials
 - **[Project site](https://chasecondon.github.io/Stardust/)** — user-facing docs, downloads, FAQ
 
 ## High-level architecture
@@ -91,23 +91,23 @@ Stardust is a Tauri 2 application:
 
 - **Frontend**: React + TypeScript for the UI
 - **Backend**: Rust, orchestrating shows, patches, and settings
-- **Audio engine**: [stardust-core](https://github.com/ChaseCondon/Overture), a sibling Rust crate handling audio I/O, MIDI, and plugin hosting
+- **Audio engine**: [stardust-core](https://github.com/StardustMT/stardust-core), a sibling Rust crate handling audio I/O, MIDI, and plugin hosting
 
 Plugins run in sandboxed child processes, communicating with the host over shared-memory ring buffers. A crashing plugin cannot take down the audio engine.
 
-See the [Architecture Overview](https://github.com/ChaseCondon/Stardust/wiki/Architecture-Overview) on the wiki for diagrams and detail.
+See the [Architecture Overview](https://github.com/StardustMT/stardust-pit/wiki/Architecture-Overview) on the wiki for diagrams and detail.
 
 ## Roadmap
 
-The 1.0 release is the goal. Progress and per-phase detail live on the [Roadmap](https://github.com/ChaseCondon/Stardust/wiki/Roadmap) wiki page.
+The 1.0 release is the goal. Progress and per-phase detail live on the [Roadmap](https://github.com/StardustMT/stardust-pit/wiki/Roadmap) wiki page.
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Open an [issue](https://github.com/ChaseCondon/Stardust/issues) or join the [discussions](https://github.com/ChaseCondon/Stardust/discussions).
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Open an [issue](https://github.com/StardustMT/stardust-pit/issues) or join the [discussions](https://github.com/StardustMT/stardust-pit/discussions).
 
 ## License
 
-[GPL v3](LICENSE). The sibling [stardust-core](https://github.com/ChaseCondon/Overture) library is Apache 2.0 — see the [license decision](https://github.com/ChaseCondon/Stardust/wiki/ADR-License-Split) for the reasoning.
+[GPL v3](LICENSE). The sibling [stardust-core](https://github.com/StardustMT/stardust-core) library is MPL 2.0 — see the [license decision](https://github.com/StardustMT/stardust-pit/wiki/ADR-License-Split) for the reasoning.
 
 ---
 

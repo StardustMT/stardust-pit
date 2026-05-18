@@ -7,8 +7,8 @@ version = "0.0.1"
 edition = "2024"
 rust-version = "1.85"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/ChaseCondon/Stardust"
-homepage = "https://github.com/ChaseCondon/Stardust"
+repository = "https://github.com/StardustMT/stardust-pit"
+homepage = "https://github.com/StardustMT/stardust-pit"
 authors = ["Chase Condon <chase.condon@gmail.com>"]
 
 [workspace.dependencies]
