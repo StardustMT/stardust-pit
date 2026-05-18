@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils"
 import { PatchNode } from "./patch-node"
 import { PatchWire } from "./patch-wire"
 import { absolutePortPosition } from "./patch-node"
+import { CompositeBlockFrame } from "./composite-block"
 import type { GraphNode, PatchGraph, Wire } from "./_types"
 
 export interface PatchCanvasProps {
@@ -66,6 +67,18 @@ export function PatchCanvas({
     >
       {/* Inner large surface so the canvas can scroll past placed nodes. */}
       <div className="relative" style={{ minWidth: 2000, minHeight: 1400 }}>
+        {/* Composite block frames — sit BEHIND wires + nodes */}
+        {graph.composites.map((c) => {
+          const memberNodes = graph.nodes.filter((n) => c.contains.includes(n.id))
+          return (
+            <CompositeBlockFrame
+              key={c.id}
+              composite={c}
+              nodes={memberNodes}
+            />
+          )
+        })}
+
         {/* Wires layer (SVG, sits behind nodes) */}
         <svg
           className="pointer-events-none absolute inset-0 h-full w-full"

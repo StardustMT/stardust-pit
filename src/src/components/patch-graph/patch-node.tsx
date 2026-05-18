@@ -1,10 +1,13 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { PatchPort } from "./patch-port"
-import { CLASS_COLORS, type GraphNode } from "./_types"
-import { classOf } from "./_types"
+import { NodeBody, PluginChip, hasPluginChip, pluginChipName } from "./node-body"
+import { CLASS_COLORS, classOf, type GraphNode } from "./_types"
 
-export const NODE_WIDTH = 200
+export const NODE_WIDTH = 220
+
+/** Pixel height of a node's header band — used by the wire-layout helpers. */
+const HEADER_HEIGHT = 44
 
 export interface PatchNodeProps {
   node: GraphNode
@@ -19,11 +22,13 @@ export interface PatchNodeProps {
 }
 
 /**
- * A single graph node. Header carries the class color + name; body shows the
- * config preview (kind-dependent); ports line both sides — inputs left,
- * outputs right.
+ * A single graph node, styled like a guitar pedal: bold header strip with
+ * class color + name + (for plugin nodes) the plugin chip; body shows
+ * kind-specific inline controls (mini keyboard, transpose stepper, EQ knobs,
+ * level meter, etc.); ports line both sides.
  *
- * Layout-only for now. Drag interaction lands in a later iteration.
+ * Geometry helpers below (portOffset, absolutePortPosition) keep the wire
+ * layer in sync with port positions inside the node.
  */
 export function PatchNode({
   node,
@@ -41,6 +46,8 @@ export function PatchNode({
   const headerBg = `oklch(0.35 0.08 ${palette.hue})`
   const headerText = `oklch(0.95 0.05 ${palette.hue})`
   const accent = `oklch(0.7 0.18 ${palette.hue})`
+
+  const chipName = hasPluginChip(node) ? pluginChipName(node) : undefined
 
   return (
     <div
@@ -62,23 +69,26 @@ export function PatchNode({
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       )}
     >
-      {/* Header */}
+      {/* Header: class label / user name / optional plugin chip */}
       <div
         className="flex items-center justify-between gap-2 rounded-t-md px-2.5 py-1.5"
-        style={{ background: headerBg, color: headerText }}
+        style={{ background: headerBg, color: headerText, height: HEADER_HEIGHT }}
       >
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-wider opacity-75">
-            {palette.label}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[9px] font-semibold uppercase tracking-wider opacity-70">
+              {palette.label}
+            </span>
+            {chipName && <PluginChip name={chipName} />}
           </div>
           <div className="truncate text-xs font-semibold">{node.name}</div>
         </div>
       </div>
 
-      {/* Body: inputs left / config middle / outputs right */}
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1.5 py-2">
+      {/* Body: inputs left | pedal-style mini widget center | outputs right */}
+      <div className="grid grid-cols-[auto_1fr_auto] gap-1.5 px-1.5 py-2">
         {/* Input ports */}
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5 pr-1">
           {inputs.map((p) => (
             <PatchPort
               key={p.id}
@@ -90,11 +100,13 @@ export function PatchNode({
           {inputs.length === 0 && <span className="h-2" />}
         </div>
 
-        {/* Optional middle config preview */}
-        <NodeConfigPreview node={node} />
+        {/* Pedal-style body */}
+        <div className="min-w-0">
+          <NodeBody node={node} />
+        </div>
 
         {/* Output ports */}
-        <div className="flex flex-col items-end gap-1.5">
+        <div className="flex min-w-0 flex-col items-end gap-1.5 pl-1">
           {outputs.map((p) => (
             <PatchPort
               key={p.id}
@@ -110,57 +122,31 @@ export function PatchNode({
   )
 }
 
-function NodeConfigPreview({ node }: { node: GraphNode }) {
-  // POC: just show a brief readout for the kinds where it's load-bearing.
-  switch (node.kind) {
-    case "midi.transpose": {
-      const semitones = (node.config?.semitones as number | undefined) ?? 0
-      const sign = semitones > 0 ? "+" : ""
-      return (
-        <span className="self-center font-mono text-[10px] text-muted-foreground">
-          {sign}
-          {semitones} st
-        </span>
-      )
-    }
-    case "instrument.plugin": {
-      const uri = node.config?.pluginUri as string | undefined
-      return (
-        <span className="max-w-[60px] self-center truncate text-[10px] text-muted-foreground">
-          {uri ?? "no plugin"}
-        </span>
-      )
-    }
-    case "instrument.sine": {
-      const poly = (node.config?.polyphony as number | undefined) ?? 8
-      return (
-        <span className="self-center text-[10px] text-muted-foreground">
-          {poly}-voice
-        </span>
-      )
-    }
-    default:
-      return <span className="self-center" />
-  }
-}
-
 // =============================================================================
 // Geometry helpers used by the canvas to draw wires between ports.
+//
+// We can't perfectly track the body's natural height without a measurement
+// pass, so we assume each port row sits at PORT_ROW_HEIGHT inside the body
+// region (which matches the gap-1.5 layout). For more accuracy in a future
+// pass, switch to a ResizeObserver / ref-based measurement.
 // =============================================================================
 
-const HEADER_HEIGHT = 36
-const BODY_TOP_PAD = 8
-const PORT_ROW_HEIGHT = 16
+const BODY_TOP_PAD = 10
+const PORT_ROW_HEIGHT = 20
 
 /** Pixel-space center of a port relative to the node's top-left corner. */
-export function portOffset(node: GraphNode, portId: string): { x: number; y: number } | null {
+export function portOffset(
+  node: GraphNode,
+  portId: string
+): { x: number; y: number } | null {
   const port = node.ports.find((p) => p.id === portId)
   if (!port) return null
   const sideList = node.ports.filter((p) => p.direction === port.direction)
   const indexInSide = sideList.findIndex((p) => p.id === portId)
   if (indexInSide < 0) return null
   const x = port.direction === "in" ? 0 : NODE_WIDTH
-  const y = HEADER_HEIGHT + BODY_TOP_PAD + indexInSide * PORT_ROW_HEIGHT + 5 // 5 ≈ port radius
+  const y =
+    HEADER_HEIGHT + BODY_TOP_PAD + indexInSide * PORT_ROW_HEIGHT + 5 // 5 ≈ port radius
   return { x, y }
 }
 

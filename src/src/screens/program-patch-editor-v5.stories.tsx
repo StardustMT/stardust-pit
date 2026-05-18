@@ -3,12 +3,16 @@ import * as React from "react"
 import {
   AppShellFrame,
   InspectorFrame,
-  Placeholder,
 } from "@/components/shell/app-shell-frame"
 import type { AppMode } from "@/components/shell/nav-rail"
 import { PatchCanvas } from "@/components/patch-graph/patch-canvas"
 import { makeNode } from "@/components/patch-graph/_catalog"
-import type { PatchGraph } from "@/components/patch-graph/_types"
+import { NodeLibraryPanel } from "@/components/patch-graph/node-library-panel"
+import {
+  PatchOutline,
+  type OutlineSong,
+} from "@/components/patch-graph/patch-outline"
+import type { NodeKind, PatchGraph } from "@/components/patch-graph/_types"
 
 const meta: Meta = {
   title: "Screens/Program/Patch Editor v5 — Node Graph",
@@ -19,9 +23,9 @@ const meta: Meta = {
         component:
           "Patch as a freeform node graph. v5 redesign — replaces the linear " +
           "sound-chain model with a drag-drop signal-flow canvas. " +
-          "This file is iteration 1: static rendering only. Drag, wire-draw, " +
-          "library-add, composites, inspector, mix tab, live preview tab " +
-          "land in subsequent passes.",
+          "Iteration 2: pedal-style nodes (mini-widgets per kind), populated " +
+          "left+right panels, composite block frame. Bottom inspector + top " +
+          "live-preview tab + drag interaction land in iterations 3 & 4.",
       },
     },
   },
@@ -30,49 +34,73 @@ export default meta
 type Story = StoryObj
 
 // =============================================================================
-// Seed graphs — three flavours to exercise the visual range
+// Seed: songs / patches for the left outline panel
+// =============================================================================
+
+const LSOH_SONGS: OutlineSong[] = [
+  {
+    id: "s1",
+    name: "Prologue",
+    patches: [
+      { id: "p1.1", name: "Cold open" },
+      { id: "p1.2", name: "Underscoring" },
+    ],
+  },
+  {
+    id: "s2",
+    name: "Skid Row (Downtown)",
+    patches: [
+      { id: "p2.1", name: "Verse groove" },
+      { id: "p2.2", name: "Chorus pads" },
+      { id: "p2.3", name: "Final lift" },
+    ],
+  },
+  {
+    id: "s3",
+    name: "Somewhere That's Green",
+    patches: [
+      { id: "p3.1", name: "Solo piano" },
+      { id: "p3.2", name: "Strings entry" },
+    ],
+  },
+  {
+    id: "s4",
+    name: "Feed Me (Git It)",
+    patches: [
+      { id: "p4.1", name: "Stab section" },
+      { id: "p4.2", name: "Growl bass + pads" },
+    ],
+  },
+  {
+    id: "s5",
+    name: "Suddenly Seymour",
+    patches: [{ id: "p5.1", name: "Acoustic + strings" }],
+  },
+]
+
+// =============================================================================
+// Seed graphs
 // =============================================================================
 
 function casualPatchGraph(): PatchGraph {
-  // Minimal "casual user" patch: one controller, one instrument, one out.
   const keyboard = makeNode("source.keyboard", { x: 60, y: 200 })
   keyboard.name = "Main keyboard"
-  const sine = makeNode("instrument.sine", { x: 360, y: 200 })
+  const sine = makeNode("instrument.sine", { x: 400, y: 200 })
   sine.name = "Sine synth"
-  const out = makeNode("sink.main-out", { x: 700, y: 200 })
+  const out = makeNode("sink.main-out", { x: 740, y: 200 })
 
   return {
     nodes: [keyboard, sine, out],
     wires: [
-      {
-        id: "w1",
-        fromNode: keyboard.id,
-        fromPort: "out",
-        toNode: sine.id,
-        toPort: "midi-in",
-      },
-      {
-        id: "w2",
-        fromNode: sine.id,
-        fromPort: "audio-l",
-        toNode: out.id,
-        toPort: "in-l",
-      },
-      {
-        id: "w3",
-        fromNode: sine.id,
-        fromPort: "audio-r",
-        toNode: out.id,
-        toPort: "in-r",
-      },
+      { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: sine.id, toPort: "midi-in" },
+      { id: "w2", fromNode: sine.id, fromPort: "audio-l", toNode: out.id, toPort: "in-l" },
+      { id: "w3", fromNode: sine.id, fromPort: "audio-r", toNode: out.id, toPort: "in-r" },
     ],
     composites: [],
   }
 }
 
 function transposedSplitPatchGraph(): PatchGraph {
-  // Keyboard with two zone outs: low → bass synth (transposed down 12);
-  // high → lead synth, both summed to main out.
   const keyboard = makeNode("source.keyboard", { x: 60, y: 240 })
   keyboard.name = "Main keyboard"
   keyboard.ports = [
@@ -92,144 +120,146 @@ function transposedSplitPatchGraph(): PatchGraph {
     },
   ]
 
-  const transpose = makeNode("midi.transpose", { x: 340, y: 120 })
+  const transpose = makeNode("midi.transpose", { x: 380, y: 120 })
   transpose.name = "−12 semitones"
   transpose.config = { semitones: -12 }
 
-  const bass = makeNode("instrument.plugin", { x: 600, y: 120 })
+  const bass = makeNode("instrument.plugin", { x: 660, y: 120 })
   bass.name = "Bass synth"
   bass.config = { pluginUri: "Surge XT", preset: "MS-20 Bass" }
 
-  const lead = makeNode("instrument.plugin", { x: 600, y: 380 })
+  const lead = makeNode("instrument.plugin", { x: 660, y: 400 })
   lead.name = "Lead synth"
   lead.config = { pluginUri: "Surge XT", preset: "Modern Brass" }
 
-  const mix = makeNode("audio.mix", { x: 920, y: 240 })
+  const mix = makeNode("audio.mix", { x: 1000, y: 260 })
   mix.name = "Sum"
 
-  const out = makeNode("sink.main-out", { x: 1220, y: 240 })
+  const out = makeNode("sink.main-out", { x: 1320, y: 260 })
 
   return {
     nodes: [keyboard, transpose, bass, lead, mix, out],
     wires: [
-      // Low zone → transpose → bass
-      {
-        id: "w1",
-        fromNode: keyboard.id,
-        fromPort: "out-low",
-        toNode: transpose.id,
-        toPort: "in",
-      },
-      {
-        id: "w2",
-        fromNode: transpose.id,
-        fromPort: "out",
-        toNode: bass.id,
-        toPort: "midi-in",
-      },
-      // High zone → lead
-      {
-        id: "w3",
-        fromNode: keyboard.id,
-        fromPort: "out-high",
-        toNode: lead.id,
-        toPort: "midi-in",
-      },
-      // Bass → mix in 1
-      {
-        id: "w4",
-        fromNode: bass.id,
-        fromPort: "audio-l",
-        toNode: mix.id,
-        toPort: "in-1-l",
-      },
-      {
-        id: "w5",
-        fromNode: bass.id,
-        fromPort: "audio-r",
-        toNode: mix.id,
-        toPort: "in-1-r",
-      },
-      // Lead → mix in 2
-      {
-        id: "w6",
-        fromNode: lead.id,
-        fromPort: "audio-l",
-        toNode: mix.id,
-        toPort: "in-2-l",
-      },
-      {
-        id: "w7",
-        fromNode: lead.id,
-        fromPort: "audio-r",
-        toNode: mix.id,
-        toPort: "in-2-r",
-      },
-      // Mix → out
-      {
-        id: "w8",
-        fromNode: mix.id,
-        fromPort: "out-l",
-        toNode: out.id,
-        toPort: "in-l",
-      },
-      {
-        id: "w9",
-        fromNode: mix.id,
-        fromPort: "out-r",
-        toNode: out.id,
-        toPort: "in-r",
-      },
+      { id: "w1", fromNode: keyboard.id, fromPort: "out-low", toNode: transpose.id, toPort: "in" },
+      { id: "w2", fromNode: transpose.id, fromPort: "out", toNode: bass.id, toPort: "midi-in" },
+      { id: "w3", fromNode: keyboard.id, fromPort: "out-high", toNode: lead.id, toPort: "midi-in" },
+      { id: "w4", fromNode: bass.id, fromPort: "audio-l", toNode: mix.id, toPort: "in-1-l" },
+      { id: "w5", fromNode: bass.id, fromPort: "audio-r", toNode: mix.id, toPort: "in-1-r" },
+      { id: "w6", fromNode: lead.id, fromPort: "audio-l", toNode: mix.id, toPort: "in-2-l" },
+      { id: "w7", fromNode: lead.id, fromPort: "audio-r", toNode: mix.id, toPort: "in-2-r" },
+      { id: "w8", fromNode: mix.id, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
+      { id: "w9", fromNode: mix.id, fromPort: "out-r", toNode: out.id, toPort: "in-r" },
     ],
     composites: [],
   }
 }
 
+/**
+ * Piano with parallel dry + wet (reverb) sends. Demonstrates:
+ *   • Multiple wires INTO one port (keyboard + sustain both feed piano.midi-in
+ *     — the engine auto-merges; no explicit MIDI mix node needed)
+ *   • Multiple wires OUT of one port (piano stereo outs branch to EQ + reverb)
+ *   • Sum at the audio mix node
+ */
 function pianoWithSendsPatchGraph(): PatchGraph {
-  // Keyboard → piano → splitter → dry + (reverb send) → mix → out.
-  // Plus a sustain pedal feeding the piano in parallel.
-  const keyboard = makeNode("source.keyboard", { x: 60, y: 200 })
+  const keyboard = makeNode("source.keyboard", { x: 60, y: 180 })
   keyboard.name = "Main keyboard"
   const sustain = makeNode("source.sustain-pedal", { x: 60, y: 400 })
   sustain.name = "Sustain"
 
-  const midiMix = makeNode("midi.mix", { x: 320, y: 280 })
-
-  const piano = makeNode("instrument.plugin", { x: 580, y: 280 })
+  const piano = makeNode("instrument.plugin", { x: 420, y: 240 })
   piano.name = "Piano"
   piano.config = { pluginUri: "Surge XT", preset: "Felt Piano" }
 
-  const eq = makeNode("audio.eq", { x: 860, y: 200 })
+  const eq = makeNode("audio.eq", { x: 780, y: 140 })
   eq.name = "EQ"
-  const reverb = makeNode("audio.eq", { x: 860, y: 420 })
-  reverb.name = "Reverb"
-  reverb.config = { low: 0, mid: 0, high: 0 } // placeholder until reverb node lands
+  eq.config = { low: 2, mid: -1, high: 3 }
 
-  const mix = makeNode("audio.mix", { x: 1140, y: 280 })
-  const out = makeNode("sink.main-out", { x: 1440, y: 280 })
+  const reverb = makeNode("audio.eq", { x: 780, y: 400 })
+  reverb.name = "Reverb (placeholder)"
+
+  const mix = makeNode("audio.mix", { x: 1100, y: 260 })
+  mix.name = "Dry + wet"
+
+  const out = makeNode("sink.main-out", { x: 1420, y: 260 })
 
   return {
-    nodes: [keyboard, sustain, midiMix, piano, eq, reverb, mix, out],
+    nodes: [keyboard, sustain, piano, eq, reverb, mix, out],
     wires: [
-      // Both MIDI sources into the mix node feeding the piano
-      { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: midiMix.id, toPort: "in-1" },
-      { id: "w2", fromNode: sustain.id, fromPort: "out", toNode: midiMix.id, toPort: "in-2" },
-      { id: "w3", fromNode: midiMix.id, fromPort: "out", toNode: piano.id, toPort: "midi-in" },
+      // Both MIDI sources directly into piano.midi-in (engine auto-merges)
+      { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: piano.id, toPort: "midi-in" },
+      { id: "w2", fromNode: sustain.id, fromPort: "out", toNode: piano.id, toPort: "midi-in" },
       // Piano stereo into both EQ (dry) and reverb (send)
-      { id: "w4", fromNode: piano.id, fromPort: "audio-l", toNode: eq.id, toPort: "in-l" },
-      { id: "w5", fromNode: piano.id, fromPort: "audio-r", toNode: eq.id, toPort: "in-r" },
-      { id: "w6", fromNode: piano.id, fromPort: "audio-l", toNode: reverb.id, toPort: "in-l" },
-      { id: "w7", fromNode: piano.id, fromPort: "audio-r", toNode: reverb.id, toPort: "in-r" },
-      // EQ + reverb → mix
-      { id: "w8", fromNode: eq.id, fromPort: "out-l", toNode: mix.id, toPort: "in-1-l" },
-      { id: "w9", fromNode: eq.id, fromPort: "out-r", toNode: mix.id, toPort: "in-1-r" },
-      { id: "w10", fromNode: reverb.id, fromPort: "out-l", toNode: mix.id, toPort: "in-2-l" },
-      { id: "w11", fromNode: reverb.id, fromPort: "out-r", toNode: mix.id, toPort: "in-2-r" },
-      // Mix → out
-      { id: "w12", fromNode: mix.id, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
-      { id: "w13", fromNode: mix.id, fromPort: "out-r", toNode: out.id, toPort: "in-r" },
+      { id: "w3", fromNode: piano.id, fromPort: "audio-l", toNode: eq.id, toPort: "in-l" },
+      { id: "w4", fromNode: piano.id, fromPort: "audio-r", toNode: eq.id, toPort: "in-r" },
+      { id: "w5", fromNode: piano.id, fromPort: "audio-l", toNode: reverb.id, toPort: "in-l" },
+      { id: "w6", fromNode: piano.id, fromPort: "audio-r", toNode: reverb.id, toPort: "in-r" },
+      // EQ + reverb summed
+      { id: "w7", fromNode: eq.id, fromPort: "out-l", toNode: mix.id, toPort: "in-1-l" },
+      { id: "w8", fromNode: eq.id, fromPort: "out-r", toNode: mix.id, toPort: "in-1-r" },
+      { id: "w9", fromNode: reverb.id, fromPort: "out-l", toNode: mix.id, toPort: "in-2-l" },
+      { id: "w10", fromNode: reverb.id, fromPort: "out-r", toNode: mix.id, toPort: "in-2-r" },
+      // Mix to out
+      { id: "w11", fromNode: mix.id, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
+      { id: "w12", fromNode: mix.id, fromPort: "out-r", toNode: out.id, toPort: "in-r" },
     ],
     composites: [],
+  }
+}
+
+/**
+ * Shows a composite block ("B3 + Leslie") wrapping an instrument + EQ as a
+ * locked, reusable sub-graph. In the real app this lives in the user's
+ * "My Blocks" library; drag onto any patch to drop a pre-wired chain.
+ */
+function compositeBlockPatchGraph(): PatchGraph {
+  const keyboard = makeNode("source.keyboard", { x: 60, y: 220 })
+  keyboard.name = "Main keyboard"
+  const expression = makeNode("source.expression-pedal", { x: 60, y: 440 })
+  expression.name = "Leslie speed pedal"
+
+  // Inside the composite:
+  const organ = makeNode("instrument.plugin", { x: 460, y: 180 })
+  organ.name = "B3 organ"
+  organ.config = { pluginUri: "Surge XT", preset: "Tonewheel" }
+
+  const leslie = makeNode("audio.eq", { x: 760, y: 180 })
+  leslie.name = "Leslie sim"
+
+  const out = makeNode("sink.main-out", { x: 1100, y: 220 })
+
+  return {
+    nodes: [keyboard, expression, organ, leslie, out],
+    wires: [
+      { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: organ.id, toPort: "midi-in" },
+      { id: "w2", fromNode: expression.id, fromPort: "out", toNode: leslie.id, toPort: "in-l" },
+      { id: "w3", fromNode: organ.id, fromPort: "audio-l", toNode: leslie.id, toPort: "in-l" },
+      { id: "w4", fromNode: organ.id, fromPort: "audio-r", toNode: leslie.id, toPort: "in-r" },
+      { id: "w5", fromNode: leslie.id, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
+      { id: "w6", fromNode: leslie.id, fromPort: "out-r", toNode: out.id, toPort: "in-r" },
+    ],
+    composites: [
+      {
+        id: "c1",
+        name: "B3 + Leslie",
+        contains: [organ.id, leslie.id],
+        locked: true,
+        promotedPorts: [
+          {
+            id: "in", label: "Keys", direction: "in", signal: "midi",
+            internalNode: organ.id, internalPort: "midi-in",
+          },
+          {
+            id: "out-l", label: "Out L", direction: "out", signal: "audio",
+            internalNode: leslie.id, internalPort: "out-l",
+          },
+          {
+            id: "out-r", label: "Out R", direction: "out", signal: "audio",
+            internalNode: leslie.id, internalPort: "out-r",
+          },
+        ],
+      },
+    ],
   }
 }
 
@@ -239,7 +269,14 @@ function pianoWithSendsPatchGraph(): PatchGraph {
 
 export const CasualPatch: Story = {
   name: "Casual patch (Keyboard → Sine → Output)",
-  render: () => <PatchEditorShell graph={casualPatchGraph()} showName="Untitled show" />,
+  render: () => (
+    <PatchEditorShell
+      graph={casualPatchGraph()}
+      songs={LSOH_SONGS}
+      selectedPatchId="p1.1"
+      showName="Untitled show"
+    />
+  ),
 }
 
 export const SplitWithTranspose: Story = {
@@ -247,31 +284,75 @@ export const SplitWithTranspose: Story = {
   render: () => (
     <PatchEditorShell
       graph={transposedSplitPatchGraph()}
+      songs={LSOH_SONGS}
+      selectedPatchId="p4.2"
       showName="Little Shop of Horrors"
     />
   ),
 }
 
 export const PianoWithSends: Story = {
-  name: "Piano with EQ + reverb send + sustain mixing",
+  name: "Piano with EQ + reverb send (auto-merged MIDI in)",
   render: () => (
-    <PatchEditorShell graph={pianoWithSendsPatchGraph()} showName="Little Shop of Horrors" />
+    <PatchEditorShell
+      graph={pianoWithSendsPatchGraph()}
+      songs={LSOH_SONGS}
+      selectedPatchId="p3.1"
+      showName="Little Shop of Horrors"
+    />
+  ),
+}
+
+export const WithCompositeBlock: Story = {
+  name: "With composite block (B3 + Leslie, locked)",
+  render: () => (
+    <PatchEditorShell
+      graph={compositeBlockPatchGraph()}
+      songs={LSOH_SONGS}
+      selectedPatchId="p2.2"
+      showName="Little Shop of Horrors"
+      savedComposites={[
+        { id: "b3", name: "B3 + Leslie", nodeCount: 2 },
+        { id: "rhodes", name: "Rhodes + chorus + tape", nodeCount: 3 },
+        { id: "pad", name: "Lush pad layer", nodeCount: 4 },
+      ]}
+    />
   ),
 }
 
 // =============================================================================
-// Shell — placeholders for the panels we'll fill in later iterations
+// Shell
 // =============================================================================
 
 function PatchEditorShell({
-  graph,
+  graph: initialGraph,
+  songs,
+  selectedPatchId: initialSelectedPatchId,
   showName,
+  savedComposites = [],
 }: {
   graph: PatchGraph
+  songs: OutlineSong[]
+  selectedPatchId?: string
   showName: string
+  savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
 }) {
   const [mode, setMode] = React.useState<AppMode>("program")
+  const [graph, setGraph] = React.useState<PatchGraph>(initialGraph)
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | undefined>()
+  const [selectedPatchId, setSelectedPatchId] = React.useState<string | undefined>(
+    initialSelectedPatchId
+  )
+
+  // Stub: clicking a library item drops a node in the upper-left of the canvas.
+  // Real placement / drag-and-drop is iteration 4.
+  const handleAddNode = (kind: NodeKind) => {
+    const x = 40 + ((graph.nodes.length * 30) % 200)
+    const y = 80 + ((graph.nodes.length * 50) % 300)
+    const node = makeNode(kind, { x, y })
+    setGraph((g) => ({ ...g, nodes: [...g.nodes, node] }))
+    setSelectedNodeId(node.id)
+  }
 
   return (
     <AppShellFrame
@@ -279,16 +360,17 @@ function PatchEditorShell({
       onModeChange={setMode}
       showName={showName}
       contextPanel={
-        <Placeholder
-          title="Songs · Patches"
-          body="Left panel: existing show outline (songs + patches). Lands in the wiring pass."
+        <PatchOutline
+          songs={songs}
+          selectedPatchId={selectedPatchId}
+          onSelectPatch={(_s, pid) => setSelectedPatchId(pid)}
         />
       }
       inspector={
         <InspectorFrame>
-          <Placeholder
-            title="Node library"
-            body="Right panel: catalog of base nodes + 'My Blocks' tab for saved composites. Drag onto canvas. Wired in the next iteration."
+          <NodeLibraryPanel
+            onAddNode={handleAddNode}
+            savedComposites={savedComposites}
           />
         </InspectorFrame>
       }
