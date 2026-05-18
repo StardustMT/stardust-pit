@@ -1,6 +1,0 @@
-// Prevent a console window from popping up on Windows in release builds.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-fn main() {
-    stardust_core_lib::run()
-}

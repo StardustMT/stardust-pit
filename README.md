@@ -91,7 +91,7 @@ Stardust is a Tauri 2 application:
 
 - **Frontend**: React + TypeScript for the UI
 - **Backend**: Rust, orchestrating shows, patches, and settings
-- **Audio engine**: [Overture](https://github.com/ChaseCondon/Overture), a sibling Rust crate handling audio I/O, MIDI, and plugin hosting
+- **Audio engine**: [stardust-core](https://github.com/ChaseCondon/Overture), a sibling Rust crate handling audio I/O, MIDI, and plugin hosting
 
 Plugins run in sandboxed child processes, communicating with the host over shared-memory ring buffers. A crashing plugin cannot take down the audio engine.
 
@@ -107,7 +107,7 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code 
 
 ## License
 
-[GPL v3](LICENSE). The sibling [Overture](https://github.com/ChaseCondon/Overture) library is Apache 2.0 — see the [license decision](https://github.com/ChaseCondon/Stardust/wiki/ADR-License-Split) for the reasoning.
+[GPL v3](LICENSE). The sibling [stardust-core](https://github.com/ChaseCondon/Overture) library is Apache 2.0 — see the [license decision](https://github.com/ChaseCondon/Stardust/wiki/ADR-License-Split) for the reasoning.
 
 ---
 

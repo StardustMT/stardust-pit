@@ -1,19 +1,19 @@
 {
-  "name": "stardust-workspace",
+  "name": "stardust-pit",
   "private": true,
   "version": "0.0.1",
-  "description": "Stardust monorepo root. Run bun commands here; package work lives in stardust-ui/.",
+  "description": "Stardust Pit app — Tauri host (src-tauri/) + React UI (src/). Run bun commands from here.",
   "license": "GPL-3.0-or-later",
-  "workspaces": ["stardust-ui"],
+  "workspaces": ["src"],
   "scripts": {
-    "dev": "cargo tauri dev --manifest-path stardust-core/Cargo.toml --config stardust-core/tauri.conf.json",
-    "build": "cargo tauri build --manifest-path stardust-core/Cargo.toml --config stardust-core/tauri.conf.json",
-    "ui:dev": "bun --filter stardust-ui dev",
-    "ui:build": "bun --filter stardust-ui build",
-    "ui:storybook": "bun --filter stardust-ui storybook",
-    "ui:build-storybook": "bun --filter stardust-ui build-storybook",
-    "ui:lint": "bun --filter stardust-ui lint",
-    "ui:typecheck": "bun --filter stardust-ui typecheck",
-    "ui:test": "bun --filter stardust-ui test"
+    "dev": "cargo tauri dev --manifest-path src-tauri/Cargo.toml --config src-tauri/tauri.conf.json",
+    "build": "cargo tauri build --manifest-path src-tauri/Cargo.toml --config src-tauri/tauri.conf.json",
+    "ui:dev": "bun --filter stardust-pit-ui dev",
+    "ui:build": "bun --filter stardust-pit-ui build",
+    "ui:storybook": "bun --filter stardust-pit-ui storybook",
+    "ui:build-storybook": "bun --filter stardust-pit-ui build-storybook",
+    "ui:lint": "bun --filter stardust-pit-ui lint",
+    "ui:typecheck": "bun --filter stardust-pit-ui typecheck",
+    "ui:test": "bun --filter stardust-pit-ui test"
   }
 }

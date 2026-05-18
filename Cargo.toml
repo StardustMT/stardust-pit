@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["stardust-core"]
+members = ["src-tauri"]
 
 [workspace.package]
 version = "0.0.1"
@@ -33,8 +33,9 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Overture (sibling library, sourced locally during development)
-overture = { path = "../Overture/crates/overture", version = "0.0.1", features = ["full"] }
+# stardust-core (sibling library workspace, sourced locally during development)
+# Umbrella crate name matches the workspace name.
+stardust-core = { path = "../stardust-core/crates/stardust-core", version = "0.0.1", features = ["full"] }
 
 [profile.release]
 lto = "thin"
