@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Keyboard } from "@/components/rig/keyboard"
 import { Pads } from "@/components/rig/pads"
 import { Footswitch } from "@/components/rig/footswitch"
@@ -28,6 +27,8 @@ import { ComponentLibrary } from "@/components/rig/component-library"
 import { LearnableField } from "@/components/rig/learnable-field"
 import {
   defaultsForKind,
+  keyCount,
+  noteLabel,
   type RigComponentInstance,
   type RigComponentKind,
   type RigComponentSpec,
@@ -55,19 +56,23 @@ function makeInstance(spec: RigComponentSpec): RigComponentInstance {
   }
 }
 
-// Seed instances — show a populated rig out of the box.
+// Seed a populated rig showing the atomic decomposition: a typical "keys
+// player" rig is keyboard + sustain pedal + pitch wheel + mod wheel + pads,
+// each configured separately.
 function makeSeed(): RigComponentInstance[] {
   return [
     {
-      instanceId: `seed-1`,
+      instanceId: "seed-1",
       name: "Main keyboard",
       kind: "keyboard",
       ...defaultsForKind("keyboard"),
       midiInput: "USB MIDI Port 1",
       midiChannel: 1,
+      lowNote: 21,
+      highNote: 108,
     },
     {
-      instanceId: `seed-2`,
+      instanceId: "seed-2",
       name: "Drum pads",
       kind: "pads",
       ...defaultsForKind("pads"),
@@ -77,12 +82,25 @@ function makeSeed(): RigComponentInstance[] {
       cols: 8,
     },
     {
-      instanceId: `seed-3`,
+      instanceId: "seed-3",
       name: "Sustain",
-      kind: "switch",
-      ...defaultsForKind("switch"),
+      kind: "sustain-pedal",
+      ...defaultsForKind("sustain-pedal"),
       switchSource: "CC 64 ch 1",
-      switchMode: "momentary",
+    },
+    {
+      instanceId: "seed-4",
+      name: "Pitch wheel",
+      kind: "pitch-wheel",
+      ...defaultsForKind("pitch-wheel"),
+      pitchSource: "Pitch bend ch 1",
+    },
+    {
+      instanceId: "seed-5",
+      name: "Mod wheel",
+      kind: "mod-wheel",
+      ...defaultsForKind("mod-wheel"),
+      modSource: "CC 1 ch 1",
     },
   ]
 }
@@ -119,7 +137,9 @@ function RigSetupShell({
   const [selectedId, setSelectedId] = React.useState<string | undefined>(
     initial[0]?.instanceId
   )
-  const [tab, setTab] = React.useState<"settings" | "library">("library")
+  const [tab, setTab] = React.useState<"settings" | "library">(
+    initial.length ? "settings" : "library"
+  )
 
   const selected = placed.find((p) => p.instanceId === selectedId)
 
@@ -207,6 +227,11 @@ function RigSetupShell({
 // Context-panel outline
 // =============================================================================
 
+const INSTRUMENT_KINDS: RigComponentKind[] = ["keyboard", "pads"]
+function isInstrument(k: RigComponentKind): boolean {
+  return INSTRUMENT_KINDS.includes(k)
+}
+
 function RigOutline({
   placed,
   selectedId,
@@ -216,12 +241,8 @@ function RigOutline({
   selectedId: string | undefined
   onSelect: (id: string) => void
 }) {
-  const instruments = placed.filter((p) =>
-    ["keyboard", "pads"].includes(p.kind)
-  )
-  const controllers = placed.filter(
-    (p) => !["keyboard", "pads"].includes(p.kind)
-  )
+  const instruments = placed.filter((p) => isInstrument(p.kind))
+  const controllers = placed.filter((p) => !isInstrument(p.kind))
 
   return (
     <div className="flex h-full flex-col gap-3 p-2">
@@ -282,7 +303,6 @@ function OutlineRow({
   selected?: boolean
   onClick: () => void
 }) {
-  const summary = summaryFor(instance)
   return (
     <button
       type="button"
@@ -295,7 +315,7 @@ function OutlineRow({
     >
       <span className="truncate text-xs font-semibold">{instance.name}</span>
       <span className="truncate text-[10px] text-muted-foreground">
-        {summary}
+        {summaryFor(instance)}
       </span>
     </button>
   )
@@ -303,16 +323,31 @@ function OutlineRow({
 
 function summaryFor(i: RigComponentInstance): string {
   switch (i.kind) {
-    case "keyboard":
-      return `${i.keys ?? "?"} keys · ch ${i.midiChannel ?? "—"}`
-    case "pads":
-      return `${i.rows ?? "?"}×${i.cols ?? "?"} · ch ${i.midiChannel ?? "—"}`
+    case "keyboard": {
+      const kc = keyCount(i.lowNote, i.highNote)
+      const range =
+        i.lowNote !== undefined && i.highNote !== undefined
+          ? `${noteLabel(i.lowNote)}–${noteLabel(i.highNote)}`
+          : "range not learned"
+      return `${kc ?? "?"} keys · ${range} · ch ${i.midiChannel ?? "—"}`
+    }
+    case "pads": {
+      const r = i.rows ?? 0
+      const c = i.cols ?? 0
+      const learned = (i.padAssignments ?? []).filter((a) => a?.note !== undefined).length
+      return `${r}×${c} · ${learned}/${r * c} learned · ch ${i.midiChannel ?? "—"}`
+    }
     case "switch":
       return `${i.switchMode ?? "—"} · ${i.switchSource ?? "unassigned"}`
+    case "sustain-pedal":
+      return i.switchSource ?? "unassigned"
     case "expression-pedal":
       return `${i.polarity ?? "—"} · ${i.expressionSource ?? "unassigned"}`
+    case "pitch-wheel":
+      return `±${i.pitchRangeSemitones ?? 2} st · ${i.pitchSource ?? "unassigned"}`
+    case "mod-wheel":
+      return i.modSource ?? "unassigned"
     case "knob":
-      return `${i.controlRange ?? "—"} · ${i.controlSource ?? "unassigned"}`
     case "fader":
       return `${i.controlRange ?? "—"} · ${i.controlSource ?? "unassigned"}`
   }
@@ -344,8 +379,8 @@ function RigCanvas({
           <div className="mt-1 text-xs">
             Add components from the{" "}
             <span className="font-semibold text-foreground">Library</span> tab.
-            Each component captures its MIDI source with a Learn button in
-            settings.
+            Use Learn to capture key range, pad notes, and MIDI sources from
+            your hardware.
           </div>
         </div>
       </div>
@@ -407,14 +442,10 @@ function ComponentVisualCard({
 function ComponentVisual({ instance }: { instance: RigComponentInstance }) {
   switch (instance.kind) {
     case "keyboard": {
-      const range = keyRange(instance.keys ?? 88)
+      const from = instance.lowNote ?? 21
+      const to = instance.highNote ?? 108
       return (
-        <Keyboard
-          fromNote={range.from}
-          toNote={range.to}
-          whiteKeyWidth={10}
-          readOnly
-        />
+        <Keyboard fromNote={from} toNote={to} whiteKeyWidth={10} readOnly />
       )
     }
     case "pads":
@@ -424,9 +455,10 @@ function ComponentVisual({ instance }: { instance: RigComponentInstance }) {
         </div>
       )
     case "switch":
+    case "sustain-pedal":
       return (
         <div className="flex justify-center">
-          <Footswitch label={instance.name.slice(0, 4) || "SW"} />
+          <Footswitch label={instance.kind === "sustain-pedal" ? "SUS" : instance.name.slice(0, 4) || "SW"} />
         </div>
       )
     case "expression-pedal":
@@ -435,19 +467,62 @@ function ComponentVisual({ instance }: { instance: RigComponentInstance }) {
           <ExpressionPedal value={0.5} label={instance.name} />
         </div>
       )
+    case "pitch-wheel":
+      return <div className="flex justify-center"><PitchWheelGlyph label={instance.name} /></div>
+    case "mod-wheel":
+      return <div className="flex justify-center"><ModWheelGlyph label={instance.name} /></div>
     case "knob":
-      return (
-        <div className="flex justify-center">
-          <KnobGlyph label={instance.name} />
-        </div>
-      )
+      return <div className="flex justify-center"><KnobGlyph label={instance.name} /></div>
     case "fader":
-      return (
-        <div className="flex justify-center">
-          <FaderGlyph label={instance.name} />
-        </div>
-      )
+      return <div className="flex justify-center"><FaderGlyph label={instance.name} /></div>
   }
+}
+
+function PitchWheelGlyph({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className="relative h-20 w-6 rounded-full"
+        style={{
+          background: "linear-gradient(180deg, #2c2c33 0%, #18181d 100%)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.05)",
+        }}
+      >
+        <div className="absolute inset-x-1 top-1/2 h-px bg-primary/50" />
+        <div
+          className="absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-md"
+          style={{
+            background: "linear-gradient(180deg, #66666e 0%, #3a3a42 100%)",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+          }}
+        />
+      </div>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
+function ModWheelGlyph({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className="relative h-20 w-6 rounded-full"
+        style={{
+          background: "linear-gradient(180deg, #2c2c33 0%, #18181d 100%)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.05)",
+        }}
+      >
+        <div
+          className="absolute bottom-1 left-1/2 size-5 -translate-x-1/2 rounded-md"
+          style={{
+            background: "linear-gradient(180deg, #66666e 0%, #3a3a42 100%)",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+          }}
+        />
+      </div>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  )
 }
 
 function KnobGlyph({ label }: { label: string }) {
@@ -475,8 +550,7 @@ function FaderGlyph({ label }: { label: string }) {
       <div
         className="relative h-16 w-3 rounded-full"
         style={{
-          background:
-            "linear-gradient(180deg, #2c2c33 0%, #18181d 100%)",
+          background: "linear-gradient(180deg, #2c2c33 0%, #18181d 100%)",
           boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.05)",
         }}
       >
@@ -493,23 +567,6 @@ function FaderGlyph({ label }: { label: string }) {
       <span className="text-[10px] text-muted-foreground">{label}</span>
     </div>
   )
-}
-
-function keyRange(keys: number): { from: number; to: number } {
-  switch (keys) {
-    case 88: return { from: 21, to: 108 }
-    case 76: return { from: 28, to: 103 }
-    case 73: return { from: 28, to: 100 }
-    case 61: return { from: 36, to: 96 }
-    case 49: return { from: 36, to: 84 }
-    case 32: return { from: 48, to: 79 }
-    case 25: return { from: 48, to: 72 }
-    default: {
-      const from = 36
-      const to = Math.min(127, from + keys - 1)
-      return { from, to }
-    }
-  }
 }
 
 // =============================================================================
@@ -533,12 +590,19 @@ function SettingsTab({
       />
     )
   }
+
+  // Some kinds don't have a meaningful per-instance MIDI channel
+  // (sustain pedal / expression pedal / wheels / single switches / knobs / faders
+  //  all carry channel in their MIDI source string).
+  const showChannel =
+    component.kind === "keyboard" || component.kind === "pads"
+
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-5 px-1 pb-6">
         <Header instance={component} />
 
-        <Group title="Identity & MIDI source">
+        <Group title="Identity & MIDI input">
           <FieldRow>
             <Label htmlFor="display-name" className="text-xs">
               Display name
@@ -559,20 +623,17 @@ function SettingsTab({
             mockCapture={() => mockPortName()}
           />
 
-          {component.kind !== "switch" &&
-            component.kind !== "expression-pedal" &&
-            component.kind !== "knob" &&
-            component.kind !== "fader" && (
-              <FieldRow>
-                <Label htmlFor="midi-channel" className="text-xs">
-                  MIDI channel
-                </Label>
-                <ChannelInput
-                  value={component.midiChannel ?? 1}
-                  onChange={(v) => onUpdate({ midiChannel: v })}
-                />
-              </FieldRow>
-            )}
+          {showChannel && (
+            <FieldRow>
+              <Label htmlFor="midi-channel" className="text-xs">
+                MIDI channel
+              </Label>
+              <ChannelInput
+                value={component.midiChannel ?? 1}
+                onChange={(v) => onUpdate({ midiChannel: v })}
+              />
+            </FieldRow>
+          )}
         </Group>
 
         {component.kind === "keyboard" && (
@@ -584,8 +645,17 @@ function SettingsTab({
         {component.kind === "switch" && (
           <SwitchSettings instance={component} onUpdate={onUpdate} />
         )}
+        {component.kind === "sustain-pedal" && (
+          <SustainPedalSettings instance={component} onUpdate={onUpdate} />
+        )}
         {component.kind === "expression-pedal" && (
           <ExpressionPedalSettings instance={component} onUpdate={onUpdate} />
+        )}
+        {component.kind === "pitch-wheel" && (
+          <PitchWheelSettings instance={component} onUpdate={onUpdate} />
+        )}
+        {component.kind === "mod-wheel" && (
+          <ModWheelSettings instance={component} onUpdate={onUpdate} />
         )}
         {(component.kind === "knob" || component.kind === "fader") && (
           <ContinuousControlSettings instance={component} onUpdate={onUpdate} />
@@ -666,13 +736,6 @@ function ChannelInput({
 // Per-kind settings
 // -----------------------------------------------------------------------------
 
-const KEY_COUNTS = [25, 32, 49, 61, 73, 76, 88] as const
-const PAD_GRIDS = [
-  { rows: 2, cols: 8, label: "2 × 8" },
-  { rows: 4, cols: 4, label: "4 × 4" },
-  { rows: 8, cols: 8, label: "8 × 8" },
-] as const
-
 function KeyboardSettings({
   instance,
   onUpdate,
@@ -680,78 +743,44 @@ function KeyboardSettings({
   instance: RigComponentInstance
   onUpdate: (patch: Partial<RigComponentInstance>) => void
 }) {
+  const kc = keyCount(instance.lowNote, instance.highNote)
   return (
-    <>
-      <Group title="Keyboard">
-        <FieldRow>
-          <Label className="text-xs">Key count</Label>
-          <Select
-            value={String(instance.keys ?? 88)}
-            onValueChange={(v) => onUpdate({ keys: Number(v) })}
-          >
-            <SelectTrigger className="h-8 w-28 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {KEY_COUNTS.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n} keys
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FieldRow>
+    <Group title="Key range">
+      <div className="rounded-md border border-dashed bg-muted/20 px-2.5 py-2 text-[10px] text-muted-foreground">
+        Press the lowest key on your keyboard to capture, then the highest.
+        Stardust derives the key count from the range.
+      </div>
 
-        <FieldRow>
-          <Label className="text-xs">Pitch wheel range (semitones)</Label>
-          <Input
-            type="number"
-            min={1}
-            max={24}
-            value={instance.pitchRangeSemitones ?? 2}
-            onChange={(e) =>
-              onUpdate({
-                pitchRangeSemitones: Math.max(
-                  1,
-                  Math.min(24, Number(e.target.value) || 2)
-                ),
-              })
-            }
-            className="h-8 w-20 text-xs"
-          />
-        </FieldRow>
+      <LearnableField
+        label="Lowest key"
+        value={
+          instance.lowNote !== undefined
+            ? `${noteLabel(instance.lowNote)} (MIDI ${instance.lowNote})`
+            : undefined
+        }
+        placeholder="Press lowest key to capture"
+        onCapture={() => onUpdate({ lowNote: 21 })} // A0 default mock
+        mockCapture={() => `A0 (MIDI 21)`}
+      />
+      <LearnableField
+        label="Highest key"
+        value={
+          instance.highNote !== undefined
+            ? `${noteLabel(instance.highNote)} (MIDI ${instance.highNote})`
+            : undefined
+        }
+        placeholder="Press highest key to capture"
+        onCapture={() => onUpdate({ highNote: 108 })} // C8 default mock
+        mockCapture={() => `C8 (MIDI 108)`}
+      />
 
-        <ToggleRow
-          label="Has pitch wheel"
-          value={instance.hasPitchWheel ?? true}
-          onChange={(v) => onUpdate({ hasPitchWheel: v })}
-        />
-        <ToggleRow
-          label="Has mod wheel"
-          value={instance.hasModWheel ?? true}
-          onChange={(v) => onUpdate({ hasModWheel: v })}
-        />
-      </Group>
-
-      <Group title="Controller MIDI assignments">
-        <LearnableField
-          label="Sustain pedal source"
-          value={instance.sustainSource}
-          placeholder="Press sustain pedal to capture"
-          onCapture={(captured) => onUpdate({ sustainSource: captured })}
-          mockCapture={() => `CC 64 ch ${instance.midiChannel ?? 1}`}
-        />
-        {instance.hasModWheel !== false && (
-          <LearnableField
-            label="Mod wheel source"
-            value={instance.modWheelSource}
-            placeholder="Move mod wheel to capture"
-            onCapture={(captured) => onUpdate({ modWheelSource: captured })}
-            mockCapture={() => `CC 1 ch ${instance.midiChannel ?? 1}`}
-          />
-        )}
-      </Group>
-    </>
+      <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+        <span className="text-muted-foreground">Derived:</span>{" "}
+        <span className="font-mono font-semibold">
+          {kc !== undefined ? `${kc} keys` : "—"}
+        </span>
+      </div>
+    </Group>
   )
 }
 
@@ -762,47 +791,146 @@ function PadsSettings({
   instance: RigComponentInstance
   onUpdate: (patch: Partial<RigComponentInstance>) => void
 }) {
-  const currentGrid =
-    PAD_GRIDS.find(
-      (g) => g.rows === instance.rows && g.cols === instance.cols
-    ) ?? PAD_GRIDS[1]
+  const rows = instance.rows ?? 4
+  const cols = instance.cols ?? 4
+  const assignments = instance.padAssignments ?? []
+  const learnedCount = assignments.filter((a) => a?.note !== undefined).length
+
+  const setRows = (n: number) => {
+    const r = Math.max(1, Math.min(16, n))
+    onUpdate({ rows: r })
+  }
+  const setCols = (n: number) => {
+    const c = Math.max(1, Math.min(16, n))
+    onUpdate({ cols: c })
+  }
+  const learnPad = (idx: number, note: number) => {
+    const next = [...assignments]
+    next[idx] = { note }
+    onUpdate({ padAssignments: next })
+  }
+  const clearAll = () => onUpdate({ padAssignments: [] })
 
   return (
-    <Group title="Pads">
-      <FieldRow>
-        <Label className="text-xs">Grid layout</Label>
-        <Select
-          value={`${currentGrid.rows}x${currentGrid.cols}`}
-          onValueChange={(v) => {
-            const grid = PAD_GRIDS.find(
-              (g) => `${g.rows}x${g.cols}` === v
-            )
-            if (grid) onUpdate({ rows: grid.rows, cols: grid.cols })
-          }}
-        >
-          <SelectTrigger className="h-8 w-28 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PAD_GRIDS.map((g) => (
-              <SelectItem key={`${g.rows}x${g.cols}`} value={`${g.rows}x${g.cols}`}>
-                {g.label} ({g.rows * g.cols} pads)
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FieldRow>
+    <Group title="Pad grid">
+      <div className="flex items-end gap-3">
+        <FieldRow>
+          <Label className="text-xs">Rows</Label>
+          <Input
+            type="number"
+            min={1}
+            max={16}
+            value={rows}
+            onChange={(e) => setRows(Number(e.target.value) || 1)}
+            className="h-8 w-20 text-xs"
+          />
+        </FieldRow>
+        <FieldRow>
+          <Label className="text-xs">Columns</Label>
+          <Input
+            type="number"
+            min={1}
+            max={16}
+            value={cols}
+            onChange={(e) => setCols(Number(e.target.value) || 1)}
+            className="h-8 w-20 text-xs"
+          />
+        </FieldRow>
+        <div className="ml-auto text-[10px] text-muted-foreground">
+          {learnedCount} / {rows * cols} learned
+        </div>
+      </div>
 
-      <LearnableField
-        label="Base note (lowest pad)"
-        value={instance.baseNote !== undefined ? `Note ${instance.baseNote}` : undefined}
-        placeholder="Hit the lowest pad to capture"
-        onCapture={() =>
-          onUpdate({ baseNote: 36 })
-        }
-        mockCapture={() => `Note 36 ch ${instance.midiChannel ?? 10}`}
+      <div className="rounded-md border border-dashed bg-muted/20 px-2.5 py-2 text-[10px] text-muted-foreground">
+        Click a cell, then hit the corresponding pad on your hardware. Each
+        cell captures its own MIDI note.
+      </div>
+
+      <PadLearnGrid
+        rows={rows}
+        cols={cols}
+        assignments={assignments}
+        onLearn={learnPad}
       />
+
+      {learnedCount > 0 && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="self-start text-xs text-muted-foreground hover:text-foreground"
+          onClick={clearAll}
+        >
+          Clear all assignments
+        </Button>
+      )}
     </Group>
+  )
+}
+
+function PadLearnGrid({
+  rows,
+  cols,
+  assignments,
+  onLearn,
+}: {
+  rows: number
+  cols: number
+  assignments: Array<{ note?: number } | undefined>
+  onLearn: (idx: number, note: number) => void
+}) {
+  return (
+    <div
+      className="grid gap-1.5"
+      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+    >
+      {Array.from({ length: rows * cols }).map((_, idx) => (
+        <PadLearnCell
+          key={idx}
+          assignment={assignments[idx]}
+          onCapture={(note) => onLearn(idx, note)}
+          mockNote={36 + idx} // sequential mock: pad 0 -> C2, pad 1 -> C#2, ...
+        />
+      ))}
+    </div>
+  )
+}
+
+function PadLearnCell({
+  assignment,
+  onCapture,
+  mockNote,
+}: {
+  assignment: { note?: number } | undefined
+  onCapture: (note: number) => void
+  mockNote: number
+}) {
+  const [listening, setListening] = React.useState(false)
+  React.useEffect(() => {
+    if (!listening) return
+    const t = window.setTimeout(() => {
+      setListening(false)
+      onCapture(mockNote)
+    }, 900)
+    return () => window.clearTimeout(t)
+  }, [listening, mockNote, onCapture])
+
+  const note = assignment?.note
+  return (
+    <button
+      type="button"
+      onClick={() => setListening(true)}
+      className={cn(
+        "grid aspect-square place-items-center rounded-md text-[10px] font-mono transition-colors",
+        listening
+          ? "animate-pulse border border-destructive bg-destructive/10 text-destructive"
+          : note !== undefined
+          ? "border border-primary/40 bg-primary/10 text-primary"
+          : "border border-dashed border-muted-foreground/30 text-muted-foreground hover:border-foreground/40"
+      )}
+      title={note !== undefined ? `${noteLabel(note)} (MIDI ${note})` : "Click to Learn"}
+    >
+      {listening ? "···" : note !== undefined ? noteLabel(note) : "—"}
+    </button>
   )
 }
 
@@ -820,7 +948,7 @@ function SwitchSettings({
         value={instance.switchSource}
         placeholder="Press the switch to capture"
         onCapture={(captured) => onUpdate({ switchSource: captured })}
-        mockCapture={() => `CC 64 ch 1`}
+        mockCapture={() => `CC ${Math.floor(Math.random() * 95) + 16} ch 1`}
       />
       <FieldRow>
         <Label className="text-xs">Behaviour</Label>
@@ -839,6 +967,29 @@ function SwitchSettings({
           </SelectContent>
         </Select>
       </FieldRow>
+    </Group>
+  )
+}
+
+function SustainPedalSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  return (
+    <Group title="Sustain pedal">
+      <LearnableField
+        label="MIDI source"
+        value={instance.switchSource}
+        placeholder="Press the sustain pedal to capture"
+        onCapture={(captured) => onUpdate({ switchSource: captured })}
+        mockCapture={() => `CC 64 ch 1`}
+      />
+      <div className="text-[10px] text-muted-foreground">
+        Sustain pedals are always momentary — held = sustain on.
+      </div>
     </Group>
   )
 }
@@ -867,7 +1018,7 @@ function ExpressionPedalSettings({
             onUpdate({ polarity: v as "normal" | "inverted" })
           }
         >
-          <SelectTrigger className="h-8 w-36 text-xs">
+          <SelectTrigger className="h-8 w-40 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -918,6 +1069,64 @@ function ExpressionPedalSettings({
   )
 }
 
+function PitchWheelSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  return (
+    <Group title="Pitch wheel">
+      <LearnableField
+        label="MIDI source"
+        value={instance.pitchSource}
+        placeholder="Move the pitch wheel to capture"
+        onCapture={(captured) => onUpdate({ pitchSource: captured })}
+        mockCapture={() => `Pitch bend ch 1`}
+      />
+      <FieldRow>
+        <Label className="text-xs">Bend range (semitones)</Label>
+        <Input
+          type="number"
+          min={1}
+          max={24}
+          value={instance.pitchRangeSemitones ?? 2}
+          onChange={(e) =>
+            onUpdate({
+              pitchRangeSemitones: Math.max(
+                1,
+                Math.min(24, Number(e.target.value) || 2)
+              ),
+            })
+          }
+          className="h-8 w-20 text-xs"
+        />
+      </FieldRow>
+    </Group>
+  )
+}
+
+function ModWheelSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  return (
+    <Group title="Mod wheel">
+      <LearnableField
+        label="MIDI source"
+        value={instance.modSource}
+        placeholder="Move the mod wheel to capture"
+        onCapture={(captured) => onUpdate({ modSource: captured })}
+        mockCapture={() => `CC 1 ch 1`}
+      />
+    </Group>
+  )
+}
+
 function ContinuousControlSettings({
   instance,
   onUpdate,
@@ -933,9 +1142,7 @@ function ContinuousControlSettings({
         value={instance.controlSource}
         placeholder={`Move the ${noun} to capture`}
         onCapture={(captured) => onUpdate({ controlSource: captured })}
-        mockCapture={() =>
-          `CC ${instance.kind === "knob" ? 16 : 7} ch 1`
-        }
+        mockCapture={() => `CC ${instance.kind === "knob" ? 16 : 7} ch 1`}
       />
       <FieldRow>
         <Label className="text-xs">Range mode</Label>
@@ -959,23 +1166,6 @@ function ContinuousControlSettings({
         </Select>
       </FieldRow>
     </Group>
-  )
-}
-
-function ToggleRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: boolean
-  onChange: (v: boolean) => void
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <Label className="cursor-pointer text-xs">{label}</Label>
-      <Switch checked={value} onCheckedChange={onChange} />
-    </div>
   )
 }
 

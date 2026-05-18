@@ -1,8 +1,10 @@
 import * as React from "react"
 import {
+  ChevronsUpDown,
   CircleDot,
   Footprints,
   Grid3x3,
+  MoveVertical,
   Move3D,
   Piano,
   Plus,
@@ -18,9 +20,14 @@ function iconFor(kind: RigComponentKind): React.ComponentType<{ className?: stri
     case "pads":
       return Grid3x3
     case "switch":
+    case "sustain-pedal":
       return Footprints
     case "expression-pedal":
       return Move3D
+    case "pitch-wheel":
+      return ChevronsUpDown
+    case "mod-wheel":
+      return MoveVertical
     case "knob":
       return CircleDot
     case "fader":
