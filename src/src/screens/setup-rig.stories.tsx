@@ -25,6 +25,7 @@ import { Footswitch } from "@/components/rig/footswitch"
 import { ExpressionPedal } from "@/components/rig/expression-pedal"
 import { ComponentLibrary } from "@/components/rig/component-library"
 import { LearnableField } from "@/components/rig/learnable-field"
+import { LearnableNoteField } from "@/components/rig/learnable-note-field"
 import {
   defaultsForKind,
   keyCount,
@@ -748,30 +749,21 @@ function KeyboardSettings({
     <Group title="Key range">
       <div className="rounded-md border border-dashed bg-muted/20 px-2.5 py-2 text-[10px] text-muted-foreground">
         Press the lowest key on your keyboard to capture, then the highest.
-        Stardust derives the key count from the range.
+        You can also type a MIDI number or nudge with the arrows. Stardust
+        derives the key count from the range.
       </div>
 
-      <LearnableField
+      <LearnableNoteField
         label="Lowest key"
-        value={
-          instance.lowNote !== undefined
-            ? `${noteLabel(instance.lowNote)} (MIDI ${instance.lowNote})`
-            : undefined
-        }
-        placeholder="Press lowest key to capture"
-        onCapture={() => onUpdate({ lowNote: 21 })} // A0 default mock
-        mockCapture={() => `A0 (MIDI 21)`}
+        value={instance.lowNote}
+        onChange={(n) => onUpdate({ lowNote: n })}
+        mockCapture={() => 21}
       />
-      <LearnableField
+      <LearnableNoteField
         label="Highest key"
-        value={
-          instance.highNote !== undefined
-            ? `${noteLabel(instance.highNote)} (MIDI ${instance.highNote})`
-            : undefined
-        }
-        placeholder="Press highest key to capture"
-        onCapture={() => onUpdate({ highNote: 108 })} // C8 default mock
-        mockCapture={() => `C8 (MIDI 108)`}
+        value={instance.highNote}
+        onChange={(n) => onUpdate({ highNote: n })}
+        mockCapture={() => 108}
       />
 
       <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
