@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
-import { Trash2 } from "lucide-react"
+import { CircleDot, Sliders, Trash2 } from "lucide-react"
 import {
   AppShellFrame,
   InspectorFrame,
@@ -12,15 +12,25 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Keyboard } from "@/components/rig/keyboard"
 import { Pads } from "@/components/rig/pads"
 import { Footswitch } from "@/components/rig/footswitch"
 import { ExpressionPedal } from "@/components/rig/expression-pedal"
-import { DeviceLibrary } from "@/components/rig/device-library"
+import { ComponentLibrary } from "@/components/rig/component-library"
+import { LearnableField } from "@/components/rig/learnable-field"
 import {
-  MOCK_CONNECTED_DEVICE_IDS,
-  findSpec,
-  type RigDeviceSpec,
+  defaultsForKind,
+  type RigComponentInstance,
+  type RigComponentKind,
+  type RigComponentSpec,
 } from "@/components/rig/_catalog"
 import { cn } from "@/lib/utils"
 
@@ -32,135 +42,103 @@ export default meta
 type Story = StoryObj
 
 // =============================================================================
-// State model — placed devices are catalog specs with an instance id
+// Instance factory
 // =============================================================================
 
-interface PlacedDevice {
-  instanceId: string
-  /** Per-instance display name (defaults to vendor + model) */
-  name: string
-  spec: RigDeviceSpec
-  /** MIDI channel for this instance */
-  midiChannel: number
-}
-
 let nextInstanceId = 1
-function placeDevice(spec: RigDeviceSpec): PlacedDevice {
+function makeInstance(spec: RigComponentSpec): RigComponentInstance {
   return {
     instanceId: `inst-${nextInstanceId++}`,
-    name: `${spec.vendor} ${spec.model}`,
-    spec,
-    midiChannel: 1,
+    name: spec.label,
+    kind: spec.kind,
+    ...defaultsForKind(spec.kind),
   }
 }
 
-// Seed the populated demo with the connected RD-2000 already in the rig.
-function makeSeed(): PlacedDevice[] {
-  const rd = findSpec("rd-2000")
-  return rd ? [placeDevice(rd)] : []
+// Seed instances — show a populated rig out of the box.
+function makeSeed(): RigComponentInstance[] {
+  return [
+    {
+      instanceId: `seed-1`,
+      name: "Main keyboard",
+      kind: "keyboard",
+      ...defaultsForKind("keyboard"),
+      midiInput: "USB MIDI Port 1",
+      midiChannel: 1,
+    },
+    {
+      instanceId: `seed-2`,
+      name: "Drum pads",
+      kind: "pads",
+      ...defaultsForKind("pads"),
+      midiInput: "USB MIDI Port 2",
+      midiChannel: 10,
+      rows: 2,
+      cols: 8,
+    },
+    {
+      instanceId: `seed-3`,
+      name: "Sustain",
+      kind: "switch",
+      ...defaultsForKind("switch"),
+      switchSource: "CC 64 ch 1",
+      switchMode: "momentary",
+    },
+  ]
 }
 
 // =============================================================================
-// Story — populated rig
+// Stories
 // =============================================================================
 
 export const RigOverview: Story = {
-  name: "Rig setup (library + canvas + inspector)",
-  render: () => {
-    const [mode, setMode] = React.useState<AppMode>("setup")
-    const [placed, setPlaced] = React.useState<PlacedDevice[]>(makeSeed)
-    const [selectedId, setSelectedId] = React.useState<string | undefined>(
-      () => makeSeed()[0]?.instanceId
-    )
-    const [tab, setTab] = React.useState<"settings" | "library">("library")
-
-    return (
-      <RigSetupShell
-        mode={mode}
-        setMode={setMode}
-        placed={placed}
-        setPlaced={setPlaced}
-        selectedId={selectedId}
-        setSelectedId={setSelectedId}
-        tab={tab}
-        setTab={setTab}
-        showName="Little Shop of Horrors"
-      />
-    )
-  },
+  name: "Rig setup (populated)",
+  render: () => (
+    <RigSetupShell initial={makeSeed()} showName="Little Shop of Horrors" />
+  ),
 }
 
 export const EmptyRig: Story = {
   name: "Empty rig (first-time setup)",
-  render: () => {
-    const [mode, setMode] = React.useState<AppMode>("setup")
-    const [placed, setPlaced] = React.useState<PlacedDevice[]>([])
-    const [selectedId, setSelectedId] = React.useState<string | undefined>(undefined)
-    const [tab, setTab] = React.useState<"settings" | "library">("library")
-
-    return (
-      <RigSetupShell
-        mode={mode}
-        setMode={setMode}
-        placed={placed}
-        setPlaced={setPlaced}
-        selectedId={selectedId}
-        setSelectedId={setSelectedId}
-        tab={tab}
-        setTab={setTab}
-        showName="Untitled show"
-      />
-    )
-  },
+  render: () => <RigSetupShell initial={[]} showName="Untitled show" />,
 }
 
 // =============================================================================
-// Shared shell
+// Shell
 // =============================================================================
 
 function RigSetupShell({
-  mode,
-  setMode,
-  placed,
-  setPlaced,
-  selectedId,
-  setSelectedId,
-  tab,
-  setTab,
+  initial,
   showName,
 }: {
-  mode: AppMode
-  setMode: (m: AppMode) => void
-  placed: PlacedDevice[]
-  setPlaced: React.Dispatch<React.SetStateAction<PlacedDevice[]>>
-  selectedId: string | undefined
-  setSelectedId: (id: string | undefined) => void
-  tab: "settings" | "library"
-  setTab: (t: "settings" | "library") => void
+  initial: RigComponentInstance[]
   showName: string
 }) {
-  const addedSpecIds = React.useMemo(
-    () => placed.map((p) => p.spec.id),
-    [placed]
+  const [mode, setMode] = React.useState<AppMode>("setup")
+  const [placed, setPlaced] = React.useState<RigComponentInstance[]>(initial)
+  const [selectedId, setSelectedId] = React.useState<string | undefined>(
+    initial[0]?.instanceId
   )
+  const [tab, setTab] = React.useState<"settings" | "library">("library")
+
   const selected = placed.find((p) => p.instanceId === selectedId)
 
-  const onAddDevice = (spec: RigDeviceSpec) => {
-    const dev = placeDevice(spec)
-    setPlaced((prev) => [...prev, dev])
-    setSelectedId(dev.instanceId)
+  const onAdd = (spec: RigComponentSpec) => {
+    const inst = makeInstance(spec)
+    setPlaced((prev) => [...prev, inst])
+    setSelectedId(inst.instanceId)
     setTab("settings")
   }
 
-  const onRemove = (instanceId: string) => {
-    setPlaced((prev) => prev.filter((p) => p.instanceId !== instanceId))
-    if (selectedId === instanceId) setSelectedId(undefined)
+  const onUpdate = (id: string, patch: Partial<RigComponentInstance>) => {
+    setPlaced((prev) =>
+      prev.map((p) => (p.instanceId === id ? { ...p, ...patch } : p))
+    )
   }
 
-  const onUpdate = (instanceId: string, patch: Partial<PlacedDevice>) => {
-    setPlaced((prev) =>
-      prev.map((p) => (p.instanceId === instanceId ? { ...p, ...patch } : p))
-    )
+  const onRemove = (id: string) => {
+    setPlaced((prev) => prev.filter((p) => p.instanceId !== id))
+    if (selectedId === id) setSelectedId(undefined)
   }
 
   return (
@@ -195,7 +173,7 @@ function RigSetupShell({
               className="min-h-0 flex-1 overflow-hidden pt-3"
             >
               <SettingsTab
-                device={selected}
+                component={selected}
                 onUpdate={(patch) =>
                   selected && onUpdate(selected.instanceId, patch)
                 }
@@ -206,11 +184,7 @@ function RigSetupShell({
               value="library"
               className="min-h-0 flex-1 overflow-hidden pt-3"
             >
-              <DeviceLibrary
-                addedIds={addedSpecIds}
-                connectedIds={MOCK_CONNECTED_DEVICE_IDS}
-                onAddDevice={onAddDevice}
-              />
+              <ComponentLibrary onAdd={onAdd} />
             </TabsContent>
           </Tabs>
         </InspectorFrame>
@@ -230,7 +204,7 @@ function RigSetupShell({
 }
 
 // =============================================================================
-// Context-panel: outline of devices in the current rig
+// Context-panel outline
 // =============================================================================
 
 function RigOutline({
@@ -238,47 +212,114 @@ function RigOutline({
   selectedId,
   onSelect,
 }: {
-  placed: PlacedDevice[]
+  placed: RigComponentInstance[]
   selectedId: string | undefined
   onSelect: (id: string) => void
 }) {
+  const instruments = placed.filter((p) =>
+    ["keyboard", "pads"].includes(p.kind)
+  )
+  const controllers = placed.filter(
+    (p) => !["keyboard", "pads"].includes(p.kind)
+  )
+
   return (
-    <div className="flex h-full flex-col gap-2 p-2">
-      <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Rig devices ({placed.length})
-      </div>
-      {placed.length === 0 ? (
+    <div className="flex h-full flex-col gap-3 p-2">
+      <Section title="Instruments" count={instruments.length}>
+        {instruments.map((p) => (
+          <OutlineRow
+            key={p.instanceId}
+            instance={p}
+            selected={p.instanceId === selectedId}
+            onClick={() => onSelect(p.instanceId)}
+          />
+        ))}
+      </Section>
+      <Section title="Controllers" count={controllers.length}>
+        {controllers.map((p) => (
+          <OutlineRow
+            key={p.instanceId}
+            instance={p}
+            selected={p.instanceId === selectedId}
+            onClick={() => onSelect(p.instanceId)}
+          />
+        ))}
+      </Section>
+      {placed.length === 0 && (
         <div className="grid flex-1 place-items-center px-2 text-center text-xs text-muted-foreground">
-          Empty. Add from the Library tab.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1">
-          {placed.map((p) => (
-            <button
-              key={p.instanceId}
-              type="button"
-              onClick={() => onSelect(p.instanceId)}
-              className={cn(
-                "flex w-full flex-col rounded-md border bg-card px-2 py-1.5 text-left transition-colors",
-                "hover:border-primary/40",
-                p.instanceId === selectedId &&
-                  "border-primary ring-1 ring-primary/20"
-              )}
-            >
-              <span className="truncate text-xs font-semibold">{p.name}</span>
-              <span className="text-[10px] text-muted-foreground">
-                ch {p.midiChannel} · {p.spec.kind}
-              </span>
-            </button>
-          ))}
+          Empty. Add components from the Library tab.
         </div>
       )}
     </div>
   )
 }
 
+function Section({
+  title,
+  count,
+  children,
+}: {
+  title: string
+  count: number
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title} <span className="font-normal opacity-60">({count})</span>
+      </div>
+      <div className="flex flex-col gap-1">{children}</div>
+    </div>
+  )
+}
+
+function OutlineRow({
+  instance,
+  selected,
+  onClick,
+}: {
+  instance: RigComponentInstance
+  selected?: boolean
+  onClick: () => void
+}) {
+  const summary = summaryFor(instance)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full flex-col rounded-md border bg-card px-2 py-1.5 text-left transition-colors",
+        "hover:border-primary/40",
+        selected && "border-primary ring-1 ring-primary/20"
+      )}
+    >
+      <span className="truncate text-xs font-semibold">{instance.name}</span>
+      <span className="truncate text-[10px] text-muted-foreground">
+        {summary}
+      </span>
+    </button>
+  )
+}
+
+function summaryFor(i: RigComponentInstance): string {
+  switch (i.kind) {
+    case "keyboard":
+      return `${i.keys ?? "?"} keys · ch ${i.midiChannel ?? "—"}`
+    case "pads":
+      return `${i.rows ?? "?"}×${i.cols ?? "?"} · ch ${i.midiChannel ?? "—"}`
+    case "switch":
+      return `${i.switchMode ?? "—"} · ${i.switchSource ?? "unassigned"}`
+    case "expression-pedal":
+      return `${i.polarity ?? "—"} · ${i.expressionSource ?? "unassigned"}`
+    case "knob":
+      return `${i.controlRange ?? "—"} · ${i.controlSource ?? "unassigned"}`
+    case "fader":
+      return `${i.controlRange ?? "—"} · ${i.controlSource ?? "unassigned"}`
+  }
+}
+
 // =============================================================================
-// Canvas — visual rig of placed devices
+// Canvas — visual rig of placed components
 // =============================================================================
 
 function RigCanvas({
@@ -286,7 +327,7 @@ function RigCanvas({
   selectedId,
   onSelect,
 }: {
-  placed: PlacedDevice[]
+  placed: RigComponentInstance[]
   selectedId: string | undefined
   onSelect: (id: string) => void
 }) {
@@ -301,11 +342,10 @@ function RigCanvas({
             Start your rig
           </div>
           <div className="mt-1 text-xs">
-            Pick a device from the{" "}
-            <span className="font-semibold text-foreground">Library</span> tab
-            on the right. Toggle{" "}
-            <em>Only types matching connected</em> to narrow the list to gear
-            you have plugged in.
+            Add components from the{" "}
+            <span className="font-semibold text-foreground">Library</span> tab.
+            Each component captures its MIDI source with a Learn button in
+            settings.
           </div>
         </div>
       </div>
@@ -315,9 +355,9 @@ function RigCanvas({
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-4 p-4">
         {placed.map((p) => (
-          <DeviceVisualCard
+          <ComponentVisualCard
             key={p.instanceId}
-            device={p}
+            instance={p}
             selected={p.instanceId === selectedId}
             onSelect={() => onSelect(p.instanceId)}
           />
@@ -327,12 +367,12 @@ function RigCanvas({
   )
 }
 
-function DeviceVisualCard({
-  device,
+function ComponentVisualCard({
+  instance,
   selected,
   onSelect,
 }: {
-  device: PlacedDevice
+  instance: RigComponentInstance
   selected?: boolean
   onSelect: () => void
 }) {
@@ -349,26 +389,25 @@ function DeviceVisualCard({
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {device.spec.vendor}
+            {instance.kind.replace("-", " ")}
           </div>
-          <div className="text-sm font-semibold">{device.name}</div>
+          <div className="text-sm font-semibold">{instance.name}</div>
         </div>
-        <div className="font-mono text-[10px] uppercase text-muted-foreground">
-          ch {device.midiChannel}
-        </div>
+        {instance.midiChannel !== undefined && (
+          <div className="font-mono text-[10px] uppercase text-muted-foreground">
+            ch {instance.midiChannel}
+          </div>
+        )}
       </div>
-      <DeviceVisual spec={device.spec} />
+      <ComponentVisual instance={instance} />
     </button>
   )
 }
 
-function DeviceVisual({ spec }: { spec: RigDeviceSpec }) {
-  switch (spec.kind) {
-    case "keyboard88":
-    case "keyboard76":
-    case "keyboard61":
-    case "keyboard49": {
-      const range = keyRange(spec.keys ?? 88)
+function ComponentVisual({ instance }: { instance: RigComponentInstance }) {
+  switch (instance.kind) {
+    case "keyboard": {
+      const range = keyRange(instance.keys ?? 88)
       return (
         <Keyboard
           fromNote={range.from}
@@ -378,79 +417,93 @@ function DeviceVisual({ spec }: { spec: RigDeviceSpec }) {
         />
       )
     }
-    case "pad-keyboard": {
-      const range = keyRange(spec.keys ?? 49)
-      return (
-        <div className="flex flex-col items-center gap-3">
-          {spec.pads && <Pads rows={spec.pads.rows} cols={spec.pads.cols} />}
-          <Keyboard
-            fromNote={range.from}
-            toNote={range.to}
-            whiteKeyWidth={10}
-            readOnly
-          />
-        </div>
-      )
-    }
-    case "pad-controller":
-      return spec.pads ? (
-        <div className="flex justify-center">
-          <Pads rows={spec.pads.rows} cols={spec.pads.cols} />
-        </div>
-      ) : null
-    case "footswitch":
+    case "pads":
       return (
         <div className="flex justify-center">
-          <Footswitch label="Sustain" />
+          <Pads rows={instance.rows ?? 4} cols={instance.cols ?? 4} />
         </div>
       )
-    case "multi-switch":
+    case "switch":
       return (
-        <div className="flex justify-center gap-4">
-          <Footswitch label="A" />
-          <Footswitch label="B" />
+        <div className="flex justify-center">
+          <Footswitch label={instance.name.slice(0, 4) || "SW"} />
         </div>
       )
     case "expression-pedal":
       return (
         <div className="flex justify-center">
-          <ExpressionPedal value={0.5} label="Expression" />
+          <ExpressionPedal value={0.5} label={instance.name} />
         </div>
       )
-    case "foot-controller":
+    case "knob":
       return (
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          {Array.from({ length: Math.min(spec.pedals ?? 4, 6) }).map((_, i) => (
-            <Footswitch key={i} label={String(i + 1)} variant="compact" />
-          ))}
-          {spec.pedals && spec.pedals > 6 && (
-            <span className="text-xs text-muted-foreground">
-              +{spec.pedals - 6} more
-            </span>
-          )}
+        <div className="flex justify-center">
+          <KnobGlyph label={instance.name} />
         </div>
       )
-    default:
+    case "fader":
       return (
-        <div className="rounded-md border border-dashed bg-muted/20 p-4 text-center text-xs text-muted-foreground">
-          Visual representation lands as {spec.kind} support comes online.
+        <div className="flex justify-center">
+          <FaderGlyph label={instance.name} />
         </div>
       )
   }
 }
 
-/**
- * Compute fromNote / toNote MIDI numbers for an N-key keyboard, anchoring
- * to the conventional ranges (88 starts at A0; 76 at E1; 61 at C2; 49 at C2).
- */
+function KnobGlyph({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className="grid size-14 place-items-center rounded-full"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
+          boxShadow:
+            "0 4px 8px rgba(0,0,0,0.4), inset 0 -2px 0 0 rgba(0,0,0,0.5), inset 0 2px 0 0 rgba(255,255,255,0.05)",
+        }}
+      >
+        <CircleDot className="size-5 text-muted-foreground" />
+      </div>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
+function FaderGlyph({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className="relative h-16 w-3 rounded-full"
+        style={{
+          background:
+            "linear-gradient(180deg, #2c2c33 0%, #18181d 100%)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.05)",
+        }}
+      >
+        <div
+          className="absolute left-1/2 size-5 -translate-x-1/2 rounded-sm"
+          style={{
+            top: "30%",
+            background: "linear-gradient(180deg, #66666e 0%, #3a3a42 100%)",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+          }}
+        />
+      </div>
+      <Sliders className="size-3 text-muted-foreground" />
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
 function keyRange(keys: number): { from: number; to: number } {
   switch (keys) {
-    case 88: return { from: 21, to: 108 } // A0 .. C8
-    case 76: return { from: 28, to: 103 } // E1 .. G7
-    case 73: return { from: 28, to: 100 } // E1 .. E7 (Nord 73)
-    case 61: return { from: 36, to: 96 }  // C2 .. C7
-    case 49: return { from: 36, to: 84 }  // C2 .. C6
-    case 32: return { from: 48, to: 79 }  // C3 .. G5
+    case 88: return { from: 21, to: 108 }
+    case 76: return { from: 28, to: 103 }
+    case 73: return { from: 28, to: 100 }
+    case 61: return { from: 36, to: 96 }
+    case 49: return { from: 36, to: 84 }
+    case 32: return { from: 48, to: 79 }
+    case 25: return { from: 48, to: 72 }
     default: {
       const from = 36
       const to = Math.min(127, from + keys - 1)
@@ -460,76 +513,83 @@ function keyRange(keys: number): { from: number; to: number } {
 }
 
 // =============================================================================
-// Settings tab — per-device config (minimal POC fields)
+// Settings tab — kind-specific fields with Learn
 // =============================================================================
 
 function SettingsTab({
-  device,
+  component,
   onUpdate,
   onRemove,
 }: {
-  device: PlacedDevice | undefined
-  onUpdate: (patch: Partial<PlacedDevice>) => void
+  component: RigComponentInstance | undefined
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
   onRemove: () => void
 }) {
-  if (!device) {
+  if (!component) {
     return (
       <Placeholder
-        title="No device selected"
-        body="Click a device on the canvas (or in the left panel), then configure it here."
+        title="No component selected"
+        body="Click a component on the canvas (or in the left panel) to configure it here."
       />
     )
   }
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-4 px-1">
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {device.spec.vendor}
-          </div>
-          <div className="text-sm font-semibold">{device.spec.model}</div>
-          <div className="mt-1 text-[10px] text-muted-foreground/80">
-            {device.spec.notes ?? "—"}
-          </div>
-        </div>
+      <div className="flex flex-col gap-5 px-1 pb-6">
+        <Header instance={component} />
 
-        <Separator />
+        <Group title="Identity & MIDI source">
+          <FieldRow>
+            <Label htmlFor="display-name" className="text-xs">
+              Display name
+            </Label>
+            <Input
+              id="display-name"
+              value={component.name}
+              onChange={(e) => onUpdate({ name: e.target.value })}
+              className="h-8 text-xs"
+            />
+          </FieldRow>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-name" className="text-xs">
-            Display name
-          </Label>
-          <Input
-            id="device-name"
-            value={device.name}
-            onChange={(e) => onUpdate({ name: e.target.value })}
-            className="h-8 text-xs"
+          <LearnableField
+            label="MIDI input port"
+            value={component.midiInput}
+            placeholder="Press a key/control to capture the port"
+            onCapture={(captured) => onUpdate({ midiInput: captured })}
+            mockCapture={() => mockPortName()}
           />
-        </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-channel" className="text-xs">
-            MIDI channel
-          </Label>
-          <Input
-            id="device-channel"
-            type="number"
-            min={1}
-            max={16}
-            value={device.midiChannel}
-            onChange={(e) =>
-              onUpdate({
-                midiChannel: Math.max(
-                  1,
-                  Math.min(16, Number(e.target.value) || 1)
-                ),
-              })
-            }
-            className="h-8 w-20 text-xs"
-          />
-        </div>
+          {component.kind !== "switch" &&
+            component.kind !== "expression-pedal" &&
+            component.kind !== "knob" &&
+            component.kind !== "fader" && (
+              <FieldRow>
+                <Label htmlFor="midi-channel" className="text-xs">
+                  MIDI channel
+                </Label>
+                <ChannelInput
+                  value={component.midiChannel ?? 1}
+                  onChange={(v) => onUpdate({ midiChannel: v })}
+                />
+              </FieldRow>
+            )}
+        </Group>
 
-        <ConnectionsRow spec={device.spec} />
+        {component.kind === "keyboard" && (
+          <KeyboardSettings instance={component} onUpdate={onUpdate} />
+        )}
+        {component.kind === "pads" && (
+          <PadsSettings instance={component} onUpdate={onUpdate} />
+        )}
+        {component.kind === "switch" && (
+          <SwitchSettings instance={component} onUpdate={onUpdate} />
+        )}
+        {component.kind === "expression-pedal" && (
+          <ExpressionPedalSettings instance={component} onUpdate={onUpdate} />
+        )}
+        {(component.kind === "knob" || component.kind === "fader") && (
+          <ContinuousControlSettings instance={component} onUpdate={onUpdate} />
+        )}
 
         <Separator />
 
@@ -545,29 +605,390 @@ function SettingsTab({
   )
 }
 
-function ConnectionsRow({ spec }: { spec: RigDeviceSpec }) {
-  const items: string[] = []
-  if (spec.hasUsbMidi) items.push("USB MIDI")
-  if (spec.hasDinMidi) items.push("DIN MIDI")
-  if (spec.hasTrsMidi) items.push("TRS MIDI")
-  if (items.length === 0) return null
+function Header({ instance }: { instance: RigComponentInstance }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="text-xs text-muted-foreground">Available connections</div>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((tag) => (
-          <span
-            key={tag}
-            className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-          >
-            {tag}
-          </span>
-        ))}
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        {instance.kind.replace("-", " ")}
       </div>
+      <div className="text-sm font-semibold">{instance.name}</div>
     </div>
   )
 }
 
+function Group({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function FieldRow({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-1.5">{children}</div>
+}
+
 function Separator() {
   return <div className="h-px bg-border" />
+}
+
+function ChannelInput({
+  value,
+  onChange,
+}: {
+  value: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <Input
+      type="number"
+      min={1}
+      max={16}
+      value={value}
+      onChange={(e) =>
+        onChange(Math.max(1, Math.min(16, Number(e.target.value) || 1)))
+      }
+      className="h-8 w-20 text-xs"
+    />
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Per-kind settings
+// -----------------------------------------------------------------------------
+
+const KEY_COUNTS = [25, 32, 49, 61, 73, 76, 88] as const
+const PAD_GRIDS = [
+  { rows: 2, cols: 8, label: "2 × 8" },
+  { rows: 4, cols: 4, label: "4 × 4" },
+  { rows: 8, cols: 8, label: "8 × 8" },
+] as const
+
+function KeyboardSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  return (
+    <>
+      <Group title="Keyboard">
+        <FieldRow>
+          <Label className="text-xs">Key count</Label>
+          <Select
+            value={String(instance.keys ?? 88)}
+            onValueChange={(v) => onUpdate({ keys: Number(v) })}
+          >
+            <SelectTrigger className="h-8 w-28 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {KEY_COUNTS.map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n} keys
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FieldRow>
+
+        <FieldRow>
+          <Label className="text-xs">Pitch wheel range (semitones)</Label>
+          <Input
+            type="number"
+            min={1}
+            max={24}
+            value={instance.pitchRangeSemitones ?? 2}
+            onChange={(e) =>
+              onUpdate({
+                pitchRangeSemitones: Math.max(
+                  1,
+                  Math.min(24, Number(e.target.value) || 2)
+                ),
+              })
+            }
+            className="h-8 w-20 text-xs"
+          />
+        </FieldRow>
+
+        <ToggleRow
+          label="Has pitch wheel"
+          value={instance.hasPitchWheel ?? true}
+          onChange={(v) => onUpdate({ hasPitchWheel: v })}
+        />
+        <ToggleRow
+          label="Has mod wheel"
+          value={instance.hasModWheel ?? true}
+          onChange={(v) => onUpdate({ hasModWheel: v })}
+        />
+      </Group>
+
+      <Group title="Controller MIDI assignments">
+        <LearnableField
+          label="Sustain pedal source"
+          value={instance.sustainSource}
+          placeholder="Press sustain pedal to capture"
+          onCapture={(captured) => onUpdate({ sustainSource: captured })}
+          mockCapture={() => `CC 64 ch ${instance.midiChannel ?? 1}`}
+        />
+        {instance.hasModWheel !== false && (
+          <LearnableField
+            label="Mod wheel source"
+            value={instance.modWheelSource}
+            placeholder="Move mod wheel to capture"
+            onCapture={(captured) => onUpdate({ modWheelSource: captured })}
+            mockCapture={() => `CC 1 ch ${instance.midiChannel ?? 1}`}
+          />
+        )}
+      </Group>
+    </>
+  )
+}
+
+function PadsSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  const currentGrid =
+    PAD_GRIDS.find(
+      (g) => g.rows === instance.rows && g.cols === instance.cols
+    ) ?? PAD_GRIDS[1]
+
+  return (
+    <Group title="Pads">
+      <FieldRow>
+        <Label className="text-xs">Grid layout</Label>
+        <Select
+          value={`${currentGrid.rows}x${currentGrid.cols}`}
+          onValueChange={(v) => {
+            const grid = PAD_GRIDS.find(
+              (g) => `${g.rows}x${g.cols}` === v
+            )
+            if (grid) onUpdate({ rows: grid.rows, cols: grid.cols })
+          }}
+        >
+          <SelectTrigger className="h-8 w-28 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAD_GRIDS.map((g) => (
+              <SelectItem key={`${g.rows}x${g.cols}`} value={`${g.rows}x${g.cols}`}>
+                {g.label} ({g.rows * g.cols} pads)
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldRow>
+
+      <LearnableField
+        label="Base note (lowest pad)"
+        value={instance.baseNote !== undefined ? `Note ${instance.baseNote}` : undefined}
+        placeholder="Hit the lowest pad to capture"
+        onCapture={() =>
+          onUpdate({ baseNote: 36 })
+        }
+        mockCapture={() => `Note 36 ch ${instance.midiChannel ?? 10}`}
+      />
+    </Group>
+  )
+}
+
+function SwitchSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  return (
+    <Group title="Switch">
+      <LearnableField
+        label="MIDI source"
+        value={instance.switchSource}
+        placeholder="Press the switch to capture"
+        onCapture={(captured) => onUpdate({ switchSource: captured })}
+        mockCapture={() => `CC 64 ch 1`}
+      />
+      <FieldRow>
+        <Label className="text-xs">Behaviour</Label>
+        <Select
+          value={instance.switchMode ?? "momentary"}
+          onValueChange={(v) =>
+            onUpdate({ switchMode: v as "momentary" | "toggle" })
+          }
+        >
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="momentary">Momentary</SelectItem>
+            <SelectItem value="toggle">Toggle</SelectItem>
+          </SelectContent>
+        </Select>
+      </FieldRow>
+    </Group>
+  )
+}
+
+function ExpressionPedalSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  return (
+    <Group title="Expression pedal">
+      <LearnableField
+        label="MIDI source"
+        value={instance.expressionSource}
+        placeholder="Sweep the pedal to capture"
+        onCapture={(captured) => onUpdate({ expressionSource: captured })}
+        mockCapture={() => `CC 11 ch 1`}
+      />
+      <FieldRow>
+        <Label className="text-xs">Polarity</Label>
+        <Select
+          value={instance.polarity ?? "normal"}
+          onValueChange={(v) =>
+            onUpdate({ polarity: v as "normal" | "inverted" })
+          }
+        >
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="normal">Normal (toe down = max)</SelectItem>
+            <SelectItem value="inverted">Inverted</SelectItem>
+          </SelectContent>
+        </Select>
+      </FieldRow>
+      <div className="flex items-end gap-3">
+        <FieldRow>
+          <Label className="text-xs">Min value</Label>
+          <Input
+            type="number"
+            min={0}
+            max={127}
+            value={instance.expressionMin ?? 0}
+            onChange={(e) =>
+              onUpdate({
+                expressionMin: Math.max(
+                  0,
+                  Math.min(127, Number(e.target.value) || 0)
+                ),
+              })
+            }
+            className="h-8 w-20 text-xs"
+          />
+        </FieldRow>
+        <FieldRow>
+          <Label className="text-xs">Max value</Label>
+          <Input
+            type="number"
+            min={0}
+            max={127}
+            value={instance.expressionMax ?? 127}
+            onChange={(e) =>
+              onUpdate({
+                expressionMax: Math.max(
+                  0,
+                  Math.min(127, Number(e.target.value) || 127)
+                ),
+              })
+            }
+            className="h-8 w-20 text-xs"
+          />
+        </FieldRow>
+      </div>
+    </Group>
+  )
+}
+
+function ContinuousControlSettings({
+  instance,
+  onUpdate,
+}: {
+  instance: RigComponentInstance
+  onUpdate: (patch: Partial<RigComponentInstance>) => void
+}) {
+  const noun = instance.kind === "knob" ? "knob" : "fader"
+  return (
+    <Group title={instance.kind === "knob" ? "Knob" : "Fader"}>
+      <LearnableField
+        label="MIDI source"
+        value={instance.controlSource}
+        placeholder={`Move the ${noun} to capture`}
+        onCapture={(captured) => onUpdate({ controlSource: captured })}
+        mockCapture={() =>
+          `CC ${instance.kind === "knob" ? 16 : 7} ch 1`
+        }
+      />
+      <FieldRow>
+        <Label className="text-xs">Range mode</Label>
+        <Select
+          value={instance.controlRange ?? "absolute"}
+          onValueChange={(v) =>
+            onUpdate({ controlRange: v as "absolute" | "relative" })
+          }
+        >
+          <SelectTrigger className="h-8 w-40 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="absolute">Absolute (0–127)</SelectItem>
+            <SelectItem value="relative">
+              {instance.kind === "knob"
+                ? "Relative (endless encoder)"
+                : "Relative (delta)"}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </FieldRow>
+    </Group>
+  )
+}
+
+function ToggleRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <Label className="cursor-pointer text-xs">{label}</Label>
+      <Switch checked={value} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function mockPortName(): string {
+  const ports = [
+    "USB MIDI Port 1",
+    "USB MIDI Port 2",
+    "DIN MIDI In",
+    "Bluetooth MIDI",
+  ]
+  return ports[Math.floor(Math.random() * ports.length)]
 }
