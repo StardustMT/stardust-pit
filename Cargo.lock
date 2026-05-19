@@ -3251,7 +3251,6 @@ dependencies = [
 name = "stardust-plugin"
 version = "0.0.1"
 dependencies = [
- "cc",
  "clack-host",
  "stardust-rt",
  "thiserror 2.0.18",
