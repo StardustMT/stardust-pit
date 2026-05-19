@@ -231,15 +231,43 @@ function findDownstreamInstrument(
       (w) => w.fromNode === cur.nodeId && w.fromPort === cur.portId
     )
     for (const w of outgoing) {
-      const target = graph.nodes.find((n) => n.id === w.toNode)
-      if (!target) continue
-      if (classOf(target.kind) === "instrument") return target
-      for (const out of target.ports.filter((p) => p.direction === "out")) {
-        queue.push({ nodeId: target.id, portId: out.id })
-      }
+      const r = visitTarget(graph, w.toNode, w.toPort)
+      if (!r) continue
+      if (r.instrument) return r.instrument
+      for (const next of r.continueFrom) queue.push(next)
     }
   }
   return null
+}
+
+/**
+ * Resolve a wire endpoint to either an instrument hit or a list of next
+ * ports to keep searching from. Composite promoted ports are aliased
+ * transparently to the internal node port they map to — to the preview
+ * (and to signal flow generally) a wire into the composite "Keys" port is
+ * indistinguishable from a wire into the contained organ's MIDI in.
+ */
+function visitTarget(
+  graph: PatchGraph,
+  ownerId: string,
+  portId: string
+): { instrument?: GraphNode; continueFrom: Array<{ nodeId: string; portId: string }> } | null {
+  const node = graph.nodes.find((n) => n.id === ownerId)
+  if (node) {
+    if (classOf(node.kind) === "instrument") return { instrument: node, continueFrom: [] }
+    return {
+      continueFrom: node.ports
+        .filter((p) => p.direction === "out")
+        .map((p) => ({ nodeId: node.id, portId: p.id })),
+    }
+  }
+  const composite = graph.composites.find((c) => c.id === ownerId)
+  if (!composite) return null
+  const promoted = composite.promotedPorts.find((p) => p.id === portId)
+  if (!promoted) return null
+  // Alias: jump straight to the internal node + port the promoted port
+  // represents, then process as if we'd landed there directly.
+  return visitTarget(graph, promoted.internalNode, promoted.internalPort)
 }
 
 function countWhiteKeysInRange(fromNote: number, toNote: number): number {
