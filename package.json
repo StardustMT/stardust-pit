@@ -6,8 +6,8 @@
   "license": "GPL-3.0-or-later",
   "workspaces": ["src"],
   "scripts": {
-    "dev": "cargo tauri dev --manifest-path src-tauri/Cargo.toml --config src-tauri/tauri.conf.json",
-    "build": "cargo tauri build --manifest-path src-tauri/Cargo.toml --config src-tauri/tauri.conf.json",
+    "dev": "tauri dev",
+    "build": "tauri build",
     "ui:dev": "bun --filter stardust-pit-ui dev",
     "ui:build": "bun --filter stardust-pit-ui build",
     "ui:storybook": "bun --filter stardust-pit-ui storybook",
@@ -15,5 +15,8 @@
     "ui:lint": "bun --filter stardust-pit-ui lint",
     "ui:typecheck": "bun --filter stardust-pit-ui typecheck",
     "ui:test": "bun --filter stardust-pit-ui test"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
   }
 }
