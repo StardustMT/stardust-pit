@@ -6,7 +6,6 @@ import { CompositeBlockFrame } from "./composite-block"
 import type {
   GraphNode,
   PatchGraph,
-  Port,
   SignalKind,
   Wire,
 } from "./_types"
@@ -15,28 +14,37 @@ import type {
 // Drag types
 // =============================================================================
 
-/** A live drag-to-connect operation. */
 interface WireDrag {
   fromNode: string
   fromPort: string
-  /** Cached at drag-start so we don't re-derive on every move. */
   signal: SignalKind
-  direction: "out" | "in"
-  /** Anchor point in canvas-space (top-left of inner div). */
   anchor: { x: number; y: number }
-  /** Live cursor position in canvas-space. */
   cursor: { x: number; y: number }
-  /** Port the cursor is currently over (for snap-to-target highlight). */
   hovering: { nodeId: string; portId: string } | null
 }
 
-/** A live drag-to-move operation on a node. */
 interface NodeDrag {
   nodeId: string
-  /** Offset between pointer-down position and node origin. */
   offsetX: number
   offsetY: number
 }
+
+interface PanDrag {
+  startClientX: number
+  startClientY: number
+  startPanX: number
+  startPanY: number
+}
+
+interface ViewTransform {
+  panX: number
+  panY: number
+  zoom: number
+}
+
+const MIN_ZOOM = 0.4
+const MAX_ZOOM = 2.0
+const DEFAULT_VIEW: ViewTransform = { panX: 0, panY: 0, zoom: 1 }
 
 // =============================================================================
 // Props
@@ -56,6 +64,8 @@ export interface PatchCanvasProps {
     toNode: string
     toPort: string
   }) => void
+  /** Click an input port → delete the wire feeding it (if any). */
+  onDeleteWiresInto?: (nodeId: string, portId: string) => void
   onOpenCanvasMenu?: (anchor: { x: number; y: number }) => void
   onOpenNodeMenu?: (nodeId: string, anchor: { x: number; y: number }) => void
   onOpenWireMenu?: (wireId: string, anchor: { x: number; y: number }) => void
@@ -81,6 +91,7 @@ export function PatchCanvas({
   onSelectWire,
   onMoveNode,
   onCreateWire,
+  onDeleteWiresInto,
   onOpenCanvasMenu,
   onOpenNodeMenu,
   onOpenWireMenu,
@@ -89,31 +100,31 @@ export function PatchCanvas({
   activeWireIds,
   className,
 }: PatchCanvasProps) {
-  // Refs for coordinate conversion (clientX/Y → canvas-space).
   const surfaceRef = React.useRef<HTMLDivElement>(null)
+  const [view, setView] = React.useState<ViewTransform>(DEFAULT_VIEW)
 
-  // Convert a page-space pointer event to canvas-space (accounting for scroll).
+  // Convert page-space pointer to canvas-space (undo pan + zoom).
   const toCanvasSpace = React.useCallback(
     (e: { clientX: number; clientY: number }): { x: number; y: number } => {
       const surface = surfaceRef.current
       if (!surface) return { x: 0, y: 0 }
       const rect = surface.getBoundingClientRect()
       return {
-        x: e.clientX - rect.left + surface.scrollLeft,
-        y: e.clientY - rect.top + surface.scrollTop,
+        x: (e.clientX - rect.left - view.panX) / view.zoom,
+        y: (e.clientY - rect.top - view.panY) / view.zoom,
       }
     },
-    []
+    [view.panX, view.panY, view.zoom]
   )
 
-  // Quick lookup of node by id.
+  // Node lookup.
   const nodeMap = React.useMemo(() => {
     const m = new Map<string, GraphNode>()
     for (const n of graph.nodes) m.set(n.id, n)
     return m
   }, [graph.nodes])
 
-  // Connected port map per node (for visual cue on the port handle).
+  // Connected port map per node.
   const connectedPorts = React.useMemo(() => {
     const m = new Map<string, Set<string>>()
     for (const w of graph.wires) {
@@ -124,27 +135,87 @@ export function PatchCanvas({
   }, [graph.wires])
 
   // -------------------------------------------------------------------------
+  // Pan
+  // -------------------------------------------------------------------------
+
+  const [panDrag, setPanDrag] = React.useState<PanDrag | null>(null)
+
+  const onSurfacePointerDown = (e: React.PointerEvent) => {
+    // Pan when the click was on bare canvas (not a node/wire/composite).
+    if (e.target !== e.currentTarget) return
+    // Left-click or middle-click both work to pan; right reserved for menu.
+    if (e.button !== 0 && e.button !== 1) return
+    setPanDrag({
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPanX: view.panX,
+      startPanY: view.panY,
+    })
+    onSelectNode?.(undefined)
+    onSelectWire?.(undefined)
+  }
+
+  React.useEffect(() => {
+    if (!panDrag) return
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - panDrag.startClientX
+      const dy = e.clientY - panDrag.startClientY
+      setView((v) => ({ ...v, panX: panDrag.startPanX + dx, panY: panDrag.startPanY + dy }))
+    }
+    const onUp = () => setPanDrag(null)
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+    return () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+  }, [panDrag])
+
+  // -------------------------------------------------------------------------
+  // Zoom (wheel)
+  // -------------------------------------------------------------------------
+
+  const onWheel = (e: React.WheelEvent) => {
+    // Always treat the wheel as zoom in this canvas — no native scroll.
+    e.preventDefault()
+    const surface = surfaceRef.current
+    if (!surface) return
+    const rect = surface.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+
+    const factor = e.deltaY > 0 ? 0.92 : 1.08
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.zoom * factor))
+    if (newZoom === view.zoom) return
+
+    // Keep the point under the cursor fixed in canvas space.
+    const canvasX = (mouseX - view.panX) / view.zoom
+    const canvasY = (mouseY - view.panY) / view.zoom
+    const newPanX = mouseX - canvasX * newZoom
+    const newPanY = mouseY - canvasY * newZoom
+
+    setView({ zoom: newZoom, panX: newPanX, panY: newPanY })
+  }
+
+  // -------------------------------------------------------------------------
   // Drag-to-move-node
   // -------------------------------------------------------------------------
 
   const [nodeDrag, setNodeDrag] = React.useState<NodeDrag | null>(null)
 
-  const onNodeBodyPointerDown =
-    (nodeId: string) => (e: React.PointerEvent) => {
-      const node = nodeMap.get(nodeId)
-      if (!node) return
-      const cs = toCanvasSpace(e)
-      setNodeDrag({
-        nodeId,
-        offsetX: cs.x - node.x,
-        offsetY: cs.y - node.y,
-      })
-      // Capture pointer so we keep getting moves even outside the header.
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    }
+  const onNodeBodyPointerDown = (nodeId: string) => (e: React.PointerEvent) => {
+    const node = nodeMap.get(nodeId)
+    if (!node) return
+    const cs = toCanvasSpace(e)
+    setNodeDrag({
+      nodeId,
+      offsetX: cs.x - node.x,
+      offsetY: cs.y - node.y,
+    })
+  }
 
   // -------------------------------------------------------------------------
-  // Drag-to-connect-wire
+  // Drag-to-connect-wire (OUTPUT ports only; inputs click-to-delete)
   // -------------------------------------------------------------------------
 
   const [wireDrag, setWireDrag] = React.useState<WireDrag | null>(null)
@@ -158,6 +229,15 @@ export function PatchCanvas({
     if (!node) return
     const port = node.ports.find((p) => p.id === portId)
     if (!port) return
+
+    if (port.direction === "in") {
+      // Input port: click deletes existing connection feeding this port.
+      // We don't capture pointer or start a drag for inputs.
+      onDeleteWiresInto?.(nodeId, portId)
+      return
+    }
+
+    // Output port: start a wire drag.
     const anchor = absolutePortPosition(node, portId)
     if (!anchor) return
     const cs = toCanvasSpace(e)
@@ -165,27 +245,25 @@ export function PatchCanvas({
       fromNode: nodeId,
       fromPort: portId,
       signal: port.signal,
-      direction: port.direction,
       anchor,
       cursor: cs,
       hovering: null,
     })
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    // Note: NO setPointerCapture — that prevents pointerup from firing on
+    // the target input port, breaking snap-to-connect. Window listeners
+    // handle movement + release.
   }
 
-  const onPortPointerEnter = (
-    nodeId: string,
-    portId: string,
-    _e: React.PointerEvent
-  ) => {
+  const onPortPointerEnter = (nodeId: string, portId: string) => {
     if (!wireDrag) return
-    // Snap-highlight only on compatible OPPOSITE-direction same-signal ports.
     const node = nodeMap.get(nodeId)
     if (!node) return
     const port = node.ports.find((p) => p.id === portId)
     if (!port) return
+    // Compatible: same signal, opposite direction (= input for output-source drag),
+    // and not the same node.
     if (port.signal !== wireDrag.signal) return
-    if (port.direction === wireDrag.direction) return
+    if (port.direction !== "in") return
     if (nodeId === wireDrag.fromNode) return
     setWireDrag({ ...wireDrag, hovering: { nodeId, portId } })
   }
@@ -200,56 +278,39 @@ export function PatchCanvas({
     }
   }
 
-  const onPortPointerUp = (
-    nodeId: string,
-    portId: string,
-    _e: React.PointerEvent
-  ) => {
+  const onPortPointerUp = (nodeId: string, portId: string) => {
     if (!wireDrag) return
     const node = nodeMap.get(nodeId)
     const port = node?.ports.find((p) => p.id === portId)
     if (
       port &&
       port.signal === wireDrag.signal &&
-      port.direction !== wireDrag.direction &&
+      port.direction === "in" &&
       nodeId !== wireDrag.fromNode
     ) {
-      // Normalise: always go from output -> input regardless of drag direction.
-      if (wireDrag.direction === "out") {
-        onCreateWire?.({
-          fromNode: wireDrag.fromNode,
-          fromPort: wireDrag.fromPort,
-          toNode: nodeId,
-          toPort: portId,
-        })
-      } else {
-        onCreateWire?.({
-          fromNode: nodeId,
-          fromPort: portId,
-          toNode: wireDrag.fromNode,
-          toPort: wireDrag.fromPort,
-        })
-      }
+      onCreateWire?.({
+        fromNode: wireDrag.fromNode,
+        fromPort: wireDrag.fromPort,
+        toNode: nodeId,
+        toPort: portId,
+      })
     }
     setWireDrag(null)
   }
 
-  // Highlight map for any port currently in a drag-to-connect interaction.
   const highlightedByNode = React.useMemo(() => {
     const m = new Map<string, Record<string, boolean>>()
     if (wireDrag) {
       ensureHighlight(m, wireDrag.fromNode)[wireDrag.fromPort] = true
       if (wireDrag.hovering) {
-        ensureHighlight(m, wireDrag.hovering.nodeId)[
-          wireDrag.hovering.portId
-        ] = true
+        ensureHighlight(m, wireDrag.hovering.nodeId)[wireDrag.hovering.portId] = true
       }
     }
     return m
   }, [wireDrag])
 
   // -------------------------------------------------------------------------
-  // Global pointer handlers (move + up) — process active drags.
+  // Global pointer handlers (move + up) for node + wire drags
   // -------------------------------------------------------------------------
 
   React.useEffect(() => {
@@ -293,13 +354,16 @@ export function PatchCanvas({
     <div
       ref={surfaceRef}
       className={cn(
-        "relative h-full w-full overflow-auto bg-background",
+        "relative h-full w-full overflow-hidden bg-background",
+        panDrag ? "cursor-grabbing" : "cursor-default",
         className
       )}
       style={{
+        // Grid moves with pan, doesn't scale with zoom (avoids ant patterns).
         backgroundImage:
           "radial-gradient(circle, var(--border) 1px, transparent 1px)",
         backgroundSize: `${gridSize}px ${gridSize}px`,
+        backgroundPosition: `${view.panX % gridSize}px ${view.panY % gridSize}px`,
       }}
       onContextMenu={(e) => {
         if (!onOpenCanvasMenu) return
@@ -307,16 +371,20 @@ export function PatchCanvas({
         e.preventDefault()
         onOpenCanvasMenu({ x: e.clientX, y: e.clientY })
       }}
-      onPointerDown={(e) => {
-        // Click on bare canvas deselects.
-        if (e.target === e.currentTarget) {
-          onSelectNode?.(undefined)
-        }
-      }}
+      onPointerDown={onSurfacePointerDown}
+      onWheel={onWheel}
     >
+      {/* Inner transformed surface — pan + zoom applied here.
+          MUST have explicit width/height: SVG children use inset-0 + 100%
+          dimensions and would otherwise collapse to 0×0 (no wires render). */}
       <div
-        className="relative"
-        style={{ minWidth: 2400, minHeight: 1600 }}
+        className="absolute left-0 top-0 origin-top-left"
+        style={{
+          transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
+          willChange: "transform",
+          width: 5000,
+          height: 5000,
+        }}
       >
         {/* Composite block frames (behind everything) */}
         {graph.composites.map((c) => {
@@ -364,14 +432,11 @@ export function PatchCanvas({
                 />
               )
             })}
-            {/* Ghost wire while drag-to-connect is in flight */}
-            {wireDrag && (
-              <GhostWire drag={wireDrag} nodeMap={nodeMap} />
-            )}
+            {wireDrag && <GhostWire drag={wireDrag} nodeMap={nodeMap} />}
           </g>
         </svg>
 
-        {/* Nodes (HTML, on top of wires) */}
+        {/* Nodes (HTML on top of wires) */}
         {graph.nodes.map((n) => {
           const cnxSet = connectedPorts.get(n.id)
           const connectedMap: Record<string, boolean> = {}
@@ -406,6 +471,21 @@ export function PatchCanvas({
             </div>
           )
         })}
+      </div>
+
+      {/* Zoom indicator + reset (bottom-right corner) */}
+      <div className="pointer-events-auto absolute bottom-2 right-2 flex items-center gap-1 rounded-md border bg-card/90 px-1.5 py-1 text-[10px] font-mono backdrop-blur-sm">
+        <button
+          type="button"
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => setView(DEFAULT_VIEW)}
+          title="Reset view"
+        >
+          ⌂
+        </button>
+        <span className="px-1 text-muted-foreground tabular-nums">
+          {Math.round(view.zoom * 100)}%
+        </span>
       </div>
     </div>
   )
@@ -462,7 +542,6 @@ function GhostWire({
   drag: WireDrag
   nodeMap: Map<string, GraphNode>
 }) {
-  // If hovering a valid target, snap the ghost to that port for clean visual.
   let to = drag.cursor
   if (drag.hovering) {
     const targetNode = nodeMap.get(drag.hovering.nodeId)
@@ -471,14 +550,11 @@ function GhostWire({
       if (snap) to = snap
     }
   }
-  const from = drag.direction === "out" ? drag.anchor : to
-  const target = drag.direction === "out" ? to : drag.anchor
   return (
     <PatchWire
-      from={from}
-      to={target}
+      from={drag.anchor}
+      to={to}
       signal={drag.signal}
-      // Ghost wire is slightly translucent + selected-styled.
       selected
     />
   )
@@ -488,7 +564,6 @@ function computeObstacles(
   allNodes: GraphNode[],
   wire: Wire
 ): ReturnType<typeof nodeBounds>[] {
-  // Exclude source + target nodes (those are the endpoints, not obstacles).
   return allNodes
     .filter((n) => n.id !== wire.fromNode && n.id !== wire.toNode)
     .map((n) => nodeBounds(n))

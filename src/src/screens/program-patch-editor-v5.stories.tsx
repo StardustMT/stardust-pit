@@ -2,14 +2,14 @@ import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
 import {
   Box,
+  ChevronRight,
   Copy,
-  Eye,
-  Layers,
   Lock,
   Music,
   Palette,
   Pencil,
   Plus,
+  RotateCcw,
   Settings,
   Settings2,
   Trash2,
@@ -23,14 +23,13 @@ import {
 } from "@/components/shell/app-shell-frame"
 import type { AppMode } from "@/components/shell/nav-rail"
 import { ShowOutline } from "@/components/show/show-outline"
-import type {
-  OutlineSong as ShowOutlineSong,
-} from "@/components/show/show-outline"
-import { Keyboard } from "@/components/rig/keyboard"
+import type { OutlineSong as ShowOutlineSong } from "@/components/show/show-outline"
 import { PatchCanvas } from "@/components/patch-graph/patch-canvas"
 import { makeNode } from "@/components/patch-graph/_catalog"
-import { NodeLibraryPanel } from "@/components/patch-graph/node-library-panel"
+import { RightPanel } from "@/components/patch-graph/right-panel"
 import { PatchTabRail, type PatchTabSpec } from "@/components/patch-graph/patch-tab-rail"
+import { PatchTitleBar } from "@/components/patch-graph/patch-title-bar"
+import { LivePreview } from "@/components/patch-graph/live-preview"
 import {
   ContextMenu,
   type ContextMenuSection,
@@ -39,78 +38,43 @@ import type {
   GraphNode,
   NodeKind,
   PatchGraph,
+  Wire,
 } from "@/components/patch-graph/_types"
 import { CLASS_COLORS, classOf } from "@/components/patch-graph/_types"
+import { cn } from "@/lib/utils"
 
 const meta: Meta = {
   title: "Screens/Program/Patch Editor v5 — Node Graph",
-  parameters: {
-    layout: "fullscreen",
-    docs: {
-      description: {
-        component:
-          "Patch as a freeform node graph. v5 iteration 3 lands: " +
-          "ShowOutline floating-island on the left, NodeLibraryPanel as a " +
-          "matching card on the right, collapsible top + bottom tab rails " +
-          "(pinnable), context menus on right-click everywhere, drag-to-move " +
-          "nodes, drag-to-connect ports (with ghost wire + snap), smart wire " +
-          "routing that avoids third-party node collisions. " +
-          "Library drag-to-place and pan/zoom land in the next iteration.",
-      },
-    },
-  },
+  parameters: { layout: "fullscreen" },
 }
 export default meta
 type Story = StoryObj
 
 // =============================================================================
-// Seed: songs / patches for the ShowOutline (left panel)
+// Seed: songs / patches
 // =============================================================================
 
 const LSOH_SONGS: ShowOutlineSong[] = [
-  {
-    id: "s1",
-    number: 1,
-    name: "Prologue",
-    patches: [
-      { id: "p1.1", number: 1, name: "Cold open" },
-      { id: "p1.2", number: 2, name: "Underscoring" },
-    ],
-  },
-  {
-    id: "s2",
-    number: 2,
-    name: "Skid Row (Downtown)",
-    patches: [
-      { id: "p2.1", number: 1, name: "Verse groove" },
-      { id: "p2.2", number: 2, name: "Chorus pads" },
-      { id: "p2.3", number: 3, name: "Final lift" },
-    ],
-  },
-  {
-    id: "s3",
-    number: 3,
-    name: "Somewhere That's Green",
-    patches: [
-      { id: "p3.1", number: 1, name: "Solo piano" },
-      { id: "p3.2", number: 2, name: "Strings entry" },
-    ],
-  },
-  {
-    id: "s4",
-    number: 4,
-    name: "Feed Me (Git It)",
-    patches: [
-      { id: "p4.1", number: 1, name: "Stab section" },
-      { id: "p4.2", number: 2, name: "Growl bass + pads" },
-    ],
-  },
-  {
-    id: "s5",
-    number: 5,
-    name: "Suddenly Seymour",
-    patches: [{ id: "p5.1", number: 1, name: "Acoustic + strings" }],
-  },
+  { id: "s1", number: 1, name: "Prologue", patches: [
+    { id: "p1.1", number: 1, name: "Cold open" },
+    { id: "p1.2", number: 2, name: "Underscoring" },
+  ] },
+  { id: "s2", number: 2, name: "Skid Row (Downtown)", patches: [
+    { id: "p2.1", number: 1, name: "Verse groove" },
+    { id: "p2.2", number: 2, name: "Chorus pads" },
+    { id: "p2.3", number: 3, name: "Final lift" },
+  ] },
+  { id: "s3", number: 3, name: "Somewhere That's Green", patches: [
+    { id: "p3.1", number: 1, name: "Solo piano" },
+    { id: "p3.2", number: 2, name: "Strings entry" },
+  ] },
+  { id: "s4", number: 4, name: "Feed Me (Git It)", patches: [
+    { id: "p4.1", number: 1, name: "Stab section" },
+    { id: "p4.2", number: 2, name: "Growl bass + pads" },
+  ] },
+  { id: "s5", number: 5, name: "Suddenly Seymour", patches: [
+    { id: "p5.1", number: 1, name: "Acoustic + strings" },
+  ] },
 ]
 
 // =============================================================================
@@ -142,22 +106,17 @@ function transposedSplitPatchGraph(): PatchGraph {
     { id: "out-low", label: "Low (C2–B3)", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 36, toNote: 59 } },
     { id: "out-high", label: "High (C4–C8)", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 60, toNote: 108 } },
   ]
-
   const transpose = makeNode("midi.transpose", { x: 400, y: 100 })
   transpose.name = "−12 semitones"
   transpose.config = { semitones: -12 }
-
   const bass = makeNode("instrument.plugin", { x: 700, y: 100 })
   bass.name = "Bass synth"
   bass.config = { pluginUri: "Surge XT", preset: "MS-20 Bass" }
-
   const lead = makeNode("instrument.plugin", { x: 700, y: 400 })
   lead.name = "Lead synth"
   lead.config = { pluginUri: "Surge XT", preset: "Modern Brass" }
-
   const mix = makeNode("audio.mix", { x: 1040, y: 260 })
   mix.name = "Sum"
-
   const out = makeNode("sink.main-out", { x: 1380, y: 260 })
 
   return {
@@ -180,24 +139,19 @@ function transposedSplitPatchGraph(): PatchGraph {
 function pianoWithSendsPatchGraph(): PatchGraph {
   const keyboard = makeNode("source.keyboard", { x: 80, y: 180 })
   keyboard.name = "Main keyboard"
-  const sustain = makeNode("source.sustain-pedal", { x: 80, y: 420 })
+  const sustain = makeNode("source.sustain-pedal", { x: 80, y: 440 })
   sustain.name = "Sustain"
-
-  const piano = makeNode("instrument.plugin", { x: 440, y: 240 })
+  const piano = makeNode("instrument.plugin", { x: 460, y: 240 })
   piano.name = "Piano"
   piano.config = { pluginUri: "Surge XT", preset: "Felt Piano" }
-
-  const eq = makeNode("audio.eq", { x: 800, y: 140 })
+  const eq = makeNode("audio.eq", { x: 820, y: 140 })
   eq.name = "EQ"
   eq.config = { low: 2, mid: -1, high: 3 }
-
-  const reverb = makeNode("audio.eq", { x: 800, y: 420 })
+  const reverb = makeNode("audio.eq", { x: 820, y: 420 })
   reverb.name = "Reverb"
-
-  const mix = makeNode("audio.mix", { x: 1120, y: 260 })
+  const mix = makeNode("audio.mix", { x: 1140, y: 260 })
   mix.name = "Dry + wet"
-
-  const out = makeNode("sink.main-out", { x: 1440, y: 260 })
+  const out = makeNode("sink.main-out", { x: 1460, y: 260 })
 
   return {
     nodes: [keyboard, sustain, piano, eq, reverb, mix, out],
@@ -224,15 +178,12 @@ function compositeBlockPatchGraph(): PatchGraph {
   keyboard.name = "Main keyboard"
   const expression = makeNode("source.expression-pedal", { x: 80, y: 480 })
   expression.name = "Leslie speed pedal"
-
-  const organ = makeNode("instrument.plugin", { x: 480, y: 180 })
+  const organ = makeNode("instrument.plugin", { x: 500, y: 220 })
   organ.name = "B3 organ"
   organ.config = { pluginUri: "Surge XT", preset: "Tonewheel" }
-
-  const leslie = makeNode("audio.eq", { x: 800, y: 180 })
+  const leslie = makeNode("audio.eq", { x: 820, y: 220 })
   leslie.name = "Leslie sim"
-
-  const out = makeNode("sink.main-out", { x: 1140, y: 220 })
+  const out = makeNode("sink.main-out", { x: 1180, y: 300 })
 
   return {
     nodes: [keyboard, expression, organ, leslie, out],
@@ -267,21 +218,36 @@ function compositeBlockPatchGraph(): PatchGraph {
 export const CasualPatch: Story = {
   name: "Casual patch (Keyboard → Sine → Output)",
   render: () => (
-    <PatchEditorShell graph={casualPatchGraph()} selectedPatchId="p1.1" />
+    <PatchEditorShell
+      graph={casualPatchGraph()}
+      selectedPatchId="p1.1"
+      patchName="Cold open"
+      songName="Prologue"
+    />
   ),
 }
 
 export const SplitWithTranspose: Story = {
   name: "Split keyboard + transpose + parallel synths",
   render: () => (
-    <PatchEditorShell graph={transposedSplitPatchGraph()} selectedPatchId="p4.2" />
+    <PatchEditorShell
+      graph={transposedSplitPatchGraph()}
+      selectedPatchId="p4.2"
+      patchName="Growl bass + pads"
+      songName="Feed Me (Git It)"
+    />
   ),
 }
 
 export const PianoWithSends: Story = {
-  name: "Piano with EQ + reverb send (auto-merged MIDI in)",
+  name: "Piano with EQ + reverb send",
   render: () => (
-    <PatchEditorShell graph={pianoWithSendsPatchGraph()} selectedPatchId="p3.1" />
+    <PatchEditorShell
+      graph={pianoWithSendsPatchGraph()}
+      selectedPatchId="p3.1"
+      patchName="Solo piano"
+      songName="Somewhere That's Green"
+    />
   ),
 }
 
@@ -291,6 +257,8 @@ export const WithCompositeBlock: Story = {
     <PatchEditorShell
       graph={compositeBlockPatchGraph()}
       selectedPatchId="p2.2"
+      patchName="Chorus pads"
+      songName="Skid Row (Downtown)"
       savedComposites={[
         { id: "b3", name: "B3 + Leslie", nodeCount: 2 },
         { id: "rhodes", name: "Rhodes + chorus + tape", nodeCount: 3 },
@@ -301,7 +269,34 @@ export const WithCompositeBlock: Story = {
 }
 
 // =============================================================================
-// Shell — graph editor with floating panels + tab rails + context menus
+// Wire color palette
+// =============================================================================
+
+const WIRE_COLORS: Array<{ id: string; label: string; color: string }> = [
+  { id: "red", label: "Red", color: "oklch(0.7 0.20 25)" },
+  { id: "orange", label: "Orange", color: "oklch(0.75 0.18 55)" },
+  { id: "yellow", label: "Yellow", color: "oklch(0.85 0.18 95)" },
+  { id: "green", label: "Green", color: "oklch(0.7 0.18 145)" },
+  { id: "cyan", label: "Cyan", color: "oklch(0.75 0.15 200)" },
+  { id: "blue", label: "Blue", color: "oklch(0.65 0.2 250)" },
+  { id: "violet", label: "Violet", color: "oklch(0.65 0.2 290)" },
+  { id: "pink", label: "Pink", color: "oklch(0.75 0.2 0)" },
+  { id: "gray", label: "Gray", color: "oklch(0.6 0.02 0)" },
+]
+
+function colorDot(color: string): React.ComponentType<{ className?: string }> {
+  const C = ({ className }: { className?: string }) => (
+    <span
+      className={cn("inline-block aspect-square rounded-full", className)}
+      style={{ background: color }}
+    />
+  )
+  C.displayName = `ColorDot(${color})`
+  return C
+}
+
+// =============================================================================
+// Shell
 // =============================================================================
 
 interface ContextMenuState {
@@ -309,23 +304,70 @@ interface ContextMenuState {
   sections: ContextMenuSection[]
 }
 
+type BottomTabId = "settings" | "mix" | "preview"
+
 function PatchEditorShell({
   graph: initialGraph,
   selectedPatchId: initialSelectedPatchId,
+  patchName,
+  songName,
   savedComposites = [],
 }: {
   graph: PatchGraph
   selectedPatchId?: string
+  patchName: string
+  songName: string
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
 }) {
   const [mode, setMode] = React.useState<AppMode>("program")
   const [graph, setGraph] = React.useState<PatchGraph>(initialGraph)
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | undefined>()
   const [selectedWireId, setSelectedWireId] = React.useState<string | undefined>()
+  const [selectedCompositeId, setSelectedCompositeId] = React.useState<string | undefined>()
   const [selectedPatchId, setSelectedPatchId] = React.useState<string | undefined>(
     initialSelectedPatchId
   )
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null)
+  const [bottomTabId, setBottomTabId] = React.useState<BottomTabId | null>(null)
+
+  const selectedNode = graph.nodes.find((n) => n.id === selectedNodeId)
+  const selectedWire = graph.wires.find((w) => w.id === selectedWireId)
+  const selectedComposite = graph.composites.find((c) => c.id === selectedCompositeId)
+
+  // Auto-open Settings tab when something gets selected.
+  React.useEffect(() => {
+    if (selectedNodeId || selectedWireId || selectedCompositeId) {
+      setBottomTabId("settings")
+    }
+  }, [selectedNodeId, selectedWireId, selectedCompositeId])
+
+  // Selecting a node clears wire/composite selection (and vice versa).
+  const selectNode = (id: string | undefined) => {
+    setSelectedNodeId(id)
+    if (id) {
+      setSelectedWireId(undefined)
+      setSelectedCompositeId(undefined)
+    }
+  }
+  const selectWire = (id: string | undefined) => {
+    setSelectedWireId(id)
+    if (id) {
+      setSelectedNodeId(undefined)
+      setSelectedCompositeId(undefined)
+    }
+  }
+  const selectComposite = (id: string | undefined) => {
+    setSelectedCompositeId(id)
+    if (id) {
+      setSelectedNodeId(undefined)
+      setSelectedWireId(undefined)
+    }
+  }
+  const deselectAll = () => {
+    setSelectedNodeId(undefined)
+    setSelectedWireId(undefined)
+    setSelectedCompositeId(undefined)
+  }
 
   // -----------------------------------------------------------------
   // Mutations
@@ -336,7 +378,7 @@ function PatchEditorShell({
     const y = 100 + ((graph.nodes.length * 56) % 300)
     const node = makeNode(kind, { x, y })
     setGraph((g) => ({ ...g, nodes: [...g.nodes, node] }))
-    setSelectedNodeId(node.id)
+    selectNode(node.id)
   }
 
   const moveNode = (id: string, x: number, y: number) => {
@@ -355,12 +397,19 @@ function PatchEditorShell({
         .map((c) => ({ ...c, contains: c.contains.filter((c2) => c2 !== id) }))
         .filter((c) => c.contains.length > 0),
     }))
-    if (selectedNodeId === id) setSelectedNodeId(undefined)
+    if (selectedNodeId === id) selectNode(undefined)
   }
 
   const deleteWire = (id: string) => {
     setGraph((g) => ({ ...g, wires: g.wires.filter((w) => w.id !== id) }))
-    if (selectedWireId === id) setSelectedWireId(undefined)
+    if (selectedWireId === id) selectWire(undefined)
+  }
+
+  const deleteWiresInto = (nodeId: string, portId: string) => {
+    setGraph((g) => ({
+      ...g,
+      wires: g.wires.filter((w) => !(w.toNode === nodeId && w.toPort === portId)),
+    }))
   }
 
   const createWire = (p: {
@@ -369,7 +418,6 @@ function PatchEditorShell({
     toNode: string
     toPort: string
   }) => {
-    // Prevent duplicate wires.
     const dup = graph.wires.find(
       (w) =>
         w.fromNode === p.fromNode &&
@@ -382,12 +430,40 @@ function PatchEditorShell({
     setGraph((g) => ({ ...g, wires: [...g.wires, { id, ...p }] }))
   }
 
+  const setWireColor = (wireId: string, color: string | undefined) => {
+    setGraph((g) => ({
+      ...g,
+      wires: g.wires.map((w) => (w.id === wireId ? { ...w, color } : w)),
+    }))
+  }
+
   const toggleCompositeLock = (id: string) => {
     setGraph((g) => ({
       ...g,
       composites: g.composites.map((c) =>
         c.id === id ? { ...c, locked: !c.locked } : c
       ),
+    }))
+  }
+
+  const resizeZone = (
+    nodeId: string,
+    portId: string,
+    range: { fromNote: number; toNote: number }
+  ) => {
+    setGraph((g) => ({
+      ...g,
+      nodes: g.nodes.map((n) => {
+        if (n.id !== nodeId) return n
+        return {
+          ...n,
+          ports: n.ports.map((p) => {
+            if (p.id !== portId) return p
+            const cfg = p.config?.kind === "zone" ? p.config : { kind: "zone" as const, fromNote: 0, toNote: 0 }
+            return { ...p, config: { ...cfg, fromNote: range.fromNote, toNote: range.toNote } }
+          }),
+        }
+      }),
     }))
   }
 
@@ -408,19 +484,12 @@ function PatchEditorShell({
             { id: "add-out", label: "Add output", icon: Volume2, onSelect: () => addNode("sink.main-out") },
           ],
         },
-        {
-          id: "library",
-          items: [
-            { id: "open-library", label: "Browse full library…", icon: Layers, shortcut: "L", disabled: true },
-          ],
-        },
       ],
     })
   }
 
   const openNodeMenu = (nodeId: string, anchor: { x: number; y: number }) => {
-    const node = graph.nodes.find((n) => n.id === nodeId)
-    if (!node) return
+    selectNode(nodeId)
     setContextMenu({
       anchor,
       sections: [
@@ -434,35 +503,39 @@ function PatchEditorShell({
         },
         {
           id: "destroy",
-          items: [
-            { id: "delete", label: "Delete node", icon: Trash2, variant: "danger", onSelect: () => deleteNode(nodeId) },
-          ],
+          items: [{ id: "delete", label: "Delete node", icon: Trash2, variant: "danger", onSelect: () => deleteNode(nodeId) }],
         },
       ],
     })
   }
 
   const openWireMenu = (wireId: string, anchor: { x: number; y: number }) => {
+    selectWire(wireId)
     setContextMenu({
       anchor,
       sections: [
         {
-          id: "edit",
+          id: "color",
           items: [
-            { id: "color", label: "Change cable color…", icon: Palette, disabled: true },
+            { id: "color-default", label: "Default (signal color)", icon: RotateCcw, onSelect: () => setWireColor(wireId, undefined) },
+            ...WIRE_COLORS.map((c) => ({
+              id: `color-${c.id}`,
+              label: c.label,
+              icon: colorDot(c.color),
+              onSelect: () => setWireColor(wireId, c.color),
+            })),
           ],
         },
         {
           id: "destroy",
-          items: [
-            { id: "delete", label: "Delete wire", icon: Trash2, variant: "danger", onSelect: () => deleteWire(wireId) },
-          ],
+          items: [{ id: "delete", label: "Delete wire", icon: Trash2, variant: "danger", onSelect: () => deleteWire(wireId) }],
         },
       ],
     })
   }
 
   const openCompositeMenu = (id: string, anchor: { x: number; y: number }) => {
+    selectComposite(id)
     const c = graph.composites.find((x) => x.id === id)
     if (!c) return
     setContextMenu({
@@ -471,12 +544,7 @@ function PatchEditorShell({
         {
           id: "state",
           items: [
-            {
-              id: "lock",
-              label: c.locked ? "Unlock (edit contents)" : "Lock (drag as one)",
-              icon: c.locked ? Unlock : Lock,
-              onSelect: () => toggleCompositeLock(id),
-            },
+            { id: "lock", label: c.locked ? "Unlock (edit contents)" : "Lock (drag as one)", icon: c.locked ? Unlock : Lock, onSelect: () => toggleCompositeLock(id) },
             { id: "rename", label: "Rename composite", icon: Pencil, disabled: true },
             { id: "save", label: "Save to My Blocks…", icon: Plus, disabled: true },
           ],
@@ -493,16 +561,33 @@ function PatchEditorShell({
   }
 
   // -----------------------------------------------------------------
-  // Top + bottom tab content
+  // Bottom tab content (Settings / Mix / Preview)
   // -----------------------------------------------------------------
 
-  const selectedNode = graph.nodes.find((n) => n.id === selectedNodeId)
+  const settingsBreadcrumb: BreadcrumbItem[] = (() => {
+    const items: BreadcrumbItem[] = [{ id: "patch", label: patchName, onClick: deselectAll }]
+    if (selectedComposite) items.push({ id: "comp", label: selectedComposite.name })
+    if (selectedNode) items.push({ id: "node", label: selectedNode.name })
+    if (selectedWire) items.push({ id: "wire", label: "Wire" })
+    return items
+  })()
 
-  const topTabs: PatchTabSpec[] = [
+  const bottomTabs: PatchTabSpec[] = [
     {
-      id: "global",
-      label: "Global settings",
-      content: <GlobalSettingsTab />,
+      id: "settings",
+      label: "Settings",
+      content: (
+        <SettingsTab
+          breadcrumb={settingsBreadcrumb}
+          selectedNode={selectedNode}
+          selectedWire={selectedWire}
+          selectedComposite={selectedComposite}
+          onSetWireColor={(c) => selectedWire && setWireColor(selectedWire.id, c)}
+          onDeleteWire={() => selectedWire && deleteWire(selectedWire.id)}
+          onDeleteNode={() => selectedNode && deleteNode(selectedNode.id)}
+          onToggleCompositeLock={() => selectedComposite && toggleCompositeLock(selectedComposite.id)}
+        />
+      ),
     },
     {
       id: "mix",
@@ -510,22 +595,15 @@ function PatchEditorShell({
       content: <MixTab nodes={graph.nodes} />,
     },
     {
-      id: "live",
-      label: "Live preview",
-      content: <LivePreviewTab nodes={graph.nodes} />,
-    },
-  ]
-
-  const bottomTabs: PatchTabSpec[] = [
-    {
-      id: "inspector",
-      label: "Inspector / Plugin UI",
-      content: <InspectorTab node={selectedNode} />,
-    },
-    {
-      id: "config",
-      label: "Node config",
-      content: <NodeConfigTab node={selectedNode} />,
+      id: "preview",
+      label: "Preview",
+      content: (
+        <LivePreview
+          graph={graph}
+          patchName={patchName}
+          onResizeZone={resizeZone}
+        />
+      ),
     },
   ]
 
@@ -551,31 +629,44 @@ function PatchEditorShell({
         }
         inspector={
           <InspectorFrame>
-            <NodeLibraryPanel
+            <RightPanel
               onAddNode={addNode}
               savedComposites={savedComposites}
             />
           </InspectorFrame>
         }
         canvas={
-          <div className="flex h-full flex-col">
-            <PatchTabRail tabs={topTabs} side="top" />
-            <div className="min-h-0 flex-1">
-              <PatchCanvas
-                graph={graph}
-                selectedNodeId={selectedNodeId}
-                selectedWireId={selectedWireId}
-                onSelectNode={setSelectedNodeId}
-                onSelectWire={setSelectedWireId}
-                onMoveNode={moveNode}
-                onCreateWire={createWire}
-                onOpenCanvasMenu={openCanvasMenu}
-                onOpenNodeMenu={openNodeMenu}
-                onOpenWireMenu={openWireMenu}
-                onOpenCompositeMenu={openCompositeMenu}
+          <div className="flex h-full flex-col gap-2 p-2">
+            {/* Canvas island */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
+              <PatchTitleBar songName={songName} patchName={patchName} />
+              <div className="min-h-0 flex-1">
+                <PatchCanvas
+                  graph={graph}
+                  selectedNodeId={selectedNodeId}
+                  selectedWireId={selectedWireId}
+                  onSelectNode={selectNode}
+                  onSelectWire={selectWire}
+                  onMoveNode={moveNode}
+                  onCreateWire={createWire}
+                  onDeleteWiresInto={deleteWiresInto}
+                  onOpenCanvasMenu={openCanvasMenu}
+                  onOpenNodeMenu={openNodeMenu}
+                  onOpenWireMenu={openWireMenu}
+                  onOpenCompositeMenu={openCompositeMenu}
+                />
+              </div>
+            </div>
+            {/* Bottom tab rail (own island) */}
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <PatchTabRail
+                tabs={bottomTabs}
+                side="bottom"
+                expandedHeight={320}
+                openTabId={bottomTabId}
+                onOpenTabIdChange={(id) => setBottomTabId(id as BottomTabId | null)}
               />
             </div>
-            <PatchTabRail tabs={bottomTabs} side="bottom" expandedHeight={280} />
           </div>
         }
       />
@@ -592,221 +683,372 @@ function PatchEditorShell({
 }
 
 // =============================================================================
-// Tab content
+// Breadcrumb
 // =============================================================================
 
-function GlobalSettingsTab() {
-  return (
-    <div className="grid h-full place-items-center text-xs text-muted-foreground">
-      <div className="max-w-md text-center">
-        <Settings className="mx-auto mb-2 size-6 opacity-40" />
-        Show-level settings (transition defaults, master level, post-mix FX rack)
-        will land here.
-      </div>
-    </div>
-  )
+interface BreadcrumbItem {
+  id: string
+  label: string
+  onClick?: () => void
 }
 
-function MixTab({ nodes }: { nodes: GraphNode[] }) {
-  const instruments = nodes.filter((n) => classOf(n.kind) === "instrument")
-  if (instruments.length === 0) {
-    return (
-      <div className="grid h-full place-items-center text-xs text-muted-foreground">
-        Add an instrument to see channel strips here.
-      </div>
-    )
-  }
+function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
   return (
-    <div className="flex h-full items-end gap-2">
-      {instruments.map((n) => (
-        <ChannelStrip key={n.id} node={n} />
-      ))}
-      <div className="ml-auto flex h-full flex-col items-center gap-2 border-l pl-3">
-        <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Master
-        </span>
-        <Fader />
-      </div>
-    </div>
-  )
-}
-
-function ChannelStrip({ node }: { node: GraphNode }) {
-  const cls = CLASS_COLORS[classOf(node.kind)]
-  return (
-    <div
-      className="flex h-full w-16 flex-col items-center gap-1.5 rounded-md border bg-card px-2 py-2"
-      style={{ borderTopColor: `oklch(0.7 0.18 ${cls.hue})`, borderTopWidth: 3 }}
-    >
-      <span className="line-clamp-2 text-[9px] font-medium leading-tight">
-        {node.name}
-      </span>
-      <Fader />
-      <span className="font-mono text-[9px] text-muted-foreground">−6 dB</span>
-    </div>
-  )
-}
-
-function Fader() {
-  return (
-    <div className="relative h-24 w-3 flex-1 rounded-full bg-muted/40">
-      <div
-        className="absolute left-1/2 size-3.5 -translate-x-1/2 rounded-sm bg-foreground/40"
-        style={{ top: "30%" }}
-      />
-    </div>
-  )
-}
-
-function LivePreviewTab({ nodes }: { nodes: GraphNode[] }) {
-  const keyboards = nodes.filter((n) => n.kind === "source.keyboard")
-  if (keyboards.length === 0) {
-    return (
-      <div className="grid h-full place-items-center text-xs text-muted-foreground">
-        <div className="max-w-md text-center">
-          <Eye className="mx-auto mb-2 size-6 opacity-40" />
-          Live performance widgets — keyboards with colored zones, level meters,
-          patch name — will render here, derived from the graph above.
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="flex flex-col gap-3">
-      {keyboards.map((kb) => {
-        const zones = kb.ports
-          .filter((p) => p.direction === "out" && p.config?.kind === "zone")
-          .map((p, i) => {
-            const cfg = p.config as { kind: "zone"; fromNote: number; toNote: number }
-            return {
-              id: p.id,
-              label: p.label,
-              fromNote: cfg.fromNote,
-              toNote: cfg.toNote,
-              color: `oklch(0.65 0.18 ${(i * 130) % 360})`,
-            }
-          })
+    <nav className="flex items-center gap-1 text-[11px]" aria-label="Selection path">
+      {items.map((item, i) => {
+        const isLast = i === items.length - 1
         return (
-          <div key={kb.id} className="rounded-md border bg-card p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold">{kb.name}</span>
-              <span className="text-[10px] text-muted-foreground">
-                {zones.length || 1} zone{zones.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            <Keyboard fromNote={21} toNote={108} whiteKeyWidth={9} zones={zones} readOnly />
-          </div>
+          <React.Fragment key={item.id}>
+            {i > 0 && (
+              <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" />
+            )}
+            <button
+              type="button"
+              onClick={item.onClick}
+              disabled={!item.onClick}
+              className={cn(
+                "truncate rounded px-1.5 py-0.5",
+                isLast
+                  ? "font-semibold text-foreground"
+                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                !item.onClick && "cursor-default"
+              )}
+            >
+              {item.label}
+            </button>
+          </React.Fragment>
         )
       })}
+    </nav>
+  )
+}
+
+// =============================================================================
+// Settings tab — context-aware
+// =============================================================================
+
+function SettingsTab({
+  breadcrumb,
+  selectedNode,
+  selectedWire,
+  selectedComposite,
+  onSetWireColor,
+  onDeleteWire,
+  onDeleteNode,
+  onToggleCompositeLock,
+}: {
+  breadcrumb: BreadcrumbItem[]
+  selectedNode?: GraphNode
+  selectedWire?: Wire
+  selectedComposite?: { id: string; name: string; locked: boolean }
+  onSetWireColor: (c: string | undefined) => void
+  onDeleteWire: () => void
+  onDeleteNode: () => void
+  onToggleCompositeLock: () => void
+}) {
+  return (
+    <div className="flex h-full flex-col gap-3">
+      <div className="border-b pb-2">
+        <Breadcrumb items={breadcrumb} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {selectedWire ? (
+          <WireSettings wire={selectedWire} onSetColor={onSetWireColor} onDelete={onDeleteWire} />
+        ) : selectedNode ? (
+          <NodeSettings node={selectedNode} onDelete={onDeleteNode} />
+        ) : selectedComposite ? (
+          <CompositeSettings composite={selectedComposite} onToggleLock={onToggleCompositeLock} />
+        ) : (
+          <GlobalSettings />
+        )}
+      </div>
     </div>
   )
 }
 
-function InspectorTab({ node }: { node: GraphNode | undefined }) {
-  if (!node) {
-    return (
-      <div className="grid h-full place-items-center text-xs text-muted-foreground">
-        Select a node on the canvas to see its inspector + plugin UI here.
-      </div>
-    )
-  }
-  if (node.kind === "instrument.plugin") {
-    return (
-      <div className="grid h-full place-items-center rounded border-2 border-dashed text-xs text-muted-foreground">
-        <div className="max-w-md p-6 text-center">
-          <Box className="mx-auto mb-2 size-6 opacity-40" />
-          <div className="font-medium text-foreground">
-            {(node.config?.pluginUri as string | undefined) ?? "(no plugin loaded)"}{" "}
-            UI docks here
-          </div>
-          <div className="mt-1">
-            CLAP / VST3 plugin GUIs embed in this region. Float-out via the
-            window button (top-right of the bottom tab rail).
-          </div>
+function GlobalSettings() {
+  return (
+    <div className="grid h-full place-items-center text-center text-xs text-muted-foreground">
+      <div className="max-w-md">
+        <Settings className="mx-auto mb-2 size-6 opacity-40" />
+        <div className="text-foreground">Global patch settings</div>
+        <div className="mt-1">
+          Patch-level transition, master level, post-mix FX, and routing
+          defaults will land here. Select a node, wire, or composite block to
+          see its context-specific settings.
         </div>
       </div>
-    )
-  }
-  return (
-    <div className="flex flex-col gap-3 text-xs">
-      <div className="font-semibold">{node.name}</div>
-      <div className="rounded border bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground">
-        Kind-specific settings (transpose semitones with stepper, EQ band detail,
-        synth ADSR sliders, etc.) render here. POC version still under design —
-        the in-node controls already cover quick edits.
-      </div>
     </div>
   )
 }
 
-function NodeConfigTab({ node }: { node: GraphNode | undefined }) {
-  if (!node) {
-    return (
-      <div className="grid h-full place-items-center text-xs text-muted-foreground">
-        Select a node to edit its name, color, and port structure.
-      </div>
-    )
-  }
-  const palette = CLASS_COLORS[classOf(node.kind)]
+function NodeSettings({
+  node,
+  onDelete,
+}: {
+  node: GraphNode
+  onDelete: () => void
+}) {
+  const isPlugin = node.kind === "instrument.plugin"
   return (
-    <div className="flex flex-col gap-3 text-xs">
-      <div className="grid grid-cols-2 gap-3">
+    <div className="grid h-full grid-cols-[280px_1fr] gap-4 text-xs">
+      {/* Left: identity + ports */}
+      <div className="flex flex-col gap-3 border-r pr-4">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Name
           </label>
           <input
             defaultValue={node.name}
-            className="h-8 rounded-md border bg-card px-2 text-xs"
+            className="h-8 rounded-md border bg-background px-2 text-xs"
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Header color
+            Ports ({node.ports.length})
           </label>
-          <div className="flex h-8 items-center gap-2 rounded-md border bg-card px-2">
-            <span
-              className="size-4 rounded"
-              style={{ background: `oklch(0.55 0.15 ${palette.hue})` }}
-            />
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {palette.label}
-            </span>
+          <div className="rounded-md border bg-background">
+            {node.ports.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between border-b px-2.5 py-1.5 last:border-b-0"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        p.signal === "midi"
+                          ? "oklch(0.7 0.15 280)"
+                          : "oklch(0.7 0.15 145)",
+                    }}
+                  />
+                  <span className="text-[10px] text-muted-foreground">
+                    {p.direction === "in" ? "←" : "→"}
+                  </span>
+                  <span className="truncate">{p.label}</span>
+                </div>
+                <span className="ml-2 shrink-0 font-mono text-[10px] text-muted-foreground">
+                  {p.signal}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="mt-auto flex items-center justify-center gap-2 rounded-md border border-destructive/40 px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="size-3.5" />
+          Delete node
+        </button>
+      </div>
+
+      {/* Right: plugin UI dock or kind-specific config */}
+      <div className="min-w-0">
+        {isPlugin ? <PluginUIDock node={node} /> : <KindConfig node={node} />}
+      </div>
+    </div>
+  )
+}
+
+function PluginUIDock({ node }: { node: GraphNode }) {
+  const uri = node.config?.pluginUri as string | undefined
+  return (
+    <div className="flex h-full flex-col gap-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Plugin UI
+      </div>
+      <div className="grid min-h-[180px] flex-1 place-items-center rounded-md border-2 border-dashed text-xs text-muted-foreground">
+        <div className="max-w-md p-6 text-center">
+          <Box className="mx-auto mb-2 size-6 opacity-40" />
+          <div className="font-medium text-foreground">
+            {uri ?? "(no plugin loaded)"} UI docks here
+          </div>
+          <div className="mt-1">
+            CLAP / VST3 plugin GUIs embed in this region at native size.
+            Float-out option available from the tab rail header.
           </div>
         </div>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Ports ({node.ports.length})
-        </label>
-        <div className="rounded-md border bg-card">
-          {node.ports.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center justify-between border-b px-3 py-1.5 last:border-b-0"
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className="size-2 rounded-full"
-                  style={{
-                    background: p.signal === "midi" ? "oklch(0.7 0.15 280)" : "oklch(0.7 0.15 145)",
-                  }}
-                />
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {p.direction === "in" ? "←" : "→"}
-                </span>
-                <span>{p.label}</span>
-              </div>
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {p.signal}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="text-[10px] text-muted-foreground">
-          Add/remove ports (keyboard zones, mix inputs) coming next iteration.
+    </div>
+  )
+}
+
+function KindConfig({ node }: { node: GraphNode }) {
+  return (
+    <div className="flex h-full flex-col gap-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Configuration
+      </div>
+      <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
+        <div className="max-w-md p-6 text-center">
+          Kind-specific controls for {node.kind} land here in the next
+          iteration. The in-node body covers quick edits today.
         </div>
       </div>
+    </div>
+  )
+}
+
+function WireSettings({
+  wire,
+  onSetColor,
+  onDelete,
+}: {
+  wire: Wire
+  onSetColor: (c: string | undefined) => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="flex h-full flex-col gap-4 text-xs">
+      <div className="flex flex-col gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Cable color
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onSetColor(undefined)}
+            className={cn(
+              "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs hover:bg-muted/40",
+              !wire.color && "border-primary/40 bg-primary/5"
+            )}
+            title="Use the signal's default color"
+          >
+            <RotateCcw className="size-3" />
+            Default
+          </button>
+          {WIRE_COLORS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onSetColor(c.color)}
+              className={cn(
+                "grid size-7 place-items-center rounded-md border hover:scale-110",
+                wire.color === c.color && "ring-2 ring-primary"
+              )}
+              title={c.label}
+              style={{ background: c.color }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="rounded-md border bg-muted/20 px-3 py-2 text-[10px] text-muted-foreground">
+        Connects <span className="font-mono text-foreground">{wire.fromNode}:{wire.fromPort}</span>{" "}
+        → <span className="font-mono text-foreground">{wire.toNode}:{wire.toPort}</span>
+      </div>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="mt-auto flex w-fit items-center gap-2 rounded-md border border-destructive/40 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+      >
+        <Trash2 className="size-3.5" />
+        Delete wire
+      </button>
+    </div>
+  )
+}
+
+function CompositeSettings({
+  composite,
+  onToggleLock,
+}: {
+  composite: { id: string; name: string; locked: boolean }
+  onToggleLock: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 text-xs">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Composite block
+        </div>
+        <div className="text-sm font-semibold">{composite.name}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onToggleLock}
+        className="flex w-fit items-center gap-2 rounded-md border px-3 py-1.5 hover:bg-muted/40"
+      >
+        {composite.locked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
+        {composite.locked ? "Unlock (edit contents)" : "Lock (drag as one)"}
+      </button>
+    </div>
+  )
+}
+
+// =============================================================================
+// Mix tab — strips per audio-producing node
+// =============================================================================
+
+function MixTab({ nodes }: { nodes: GraphNode[] }) {
+  const instruments = nodes.filter((n) => classOf(n.kind) === "instrument")
+  const groups = nodes.filter((n) => n.kind === "audio.mix")
+  const masters = nodes.filter((n) => n.kind === "sink.main-out")
+
+  if (instruments.length === 0 && groups.length === 0 && masters.length === 0) {
+    return (
+      <div className="grid h-full place-items-center text-center text-xs text-muted-foreground">
+        Add an instrument or output to see channel strips here.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full items-stretch gap-6 text-xs">
+      {instruments.length > 0 && <StripGroup title="Instruments" nodes={instruments} />}
+      {groups.length > 0 && <StripGroup title="Groups" nodes={groups} />}
+      {masters.length > 0 && <StripGroup title="Master" nodes={masters} master />}
+    </div>
+  )
+}
+
+function StripGroup({
+  title,
+  nodes,
+  master,
+}: {
+  title: string
+  nodes: GraphNode[]
+  master?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      <div className="flex flex-1 items-end gap-2">
+        {nodes.map((n) => (
+          <ChannelStrip key={n.id} node={n} master={master} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ChannelStrip({ node, master }: { node: GraphNode; master?: boolean }) {
+  const cls = CLASS_COLORS[classOf(node.kind)]
+  return (
+    <div
+      className="flex h-full w-16 flex-col items-center gap-1.5 rounded-md border bg-background px-2 py-2"
+      style={{
+        borderTopColor: `oklch(0.7 0.18 ${cls.hue})`,
+        borderTopWidth: master ? 4 : 2,
+      }}
+    >
+      <span className="line-clamp-2 text-center text-[9px] font-medium leading-tight">
+        {node.name}
+      </span>
+      <div className="relative my-2 h-full min-h-[80px] w-3 rounded-full bg-muted/40">
+        <div
+          className="absolute left-1/2 size-3.5 -translate-x-1/2 rounded-sm bg-foreground/40"
+          style={{ top: "30%" }}
+        />
+      </div>
+      <span className="font-mono text-[9px] text-muted-foreground">
+        {master ? "0.0" : "−6.0"}
+      </span>
     </div>
   )
 }

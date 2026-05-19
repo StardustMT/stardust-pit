@@ -108,8 +108,8 @@ export function PatchWire({
 // Routing
 // =============================================================================
 
-const OBSTACLE_PADDING = 12
-const SAMPLE_COUNT = 24
+const OBSTACLE_PADDING = 14
+const SAMPLE_COUNT = 32
 
 function routedBezier(
   from: { x: number; y: number },
@@ -117,13 +117,12 @@ function routedBezier(
   obstacles: ObstacleRect[]
 ): string {
   // Step 1: try the straightforward path.
-  const simpleControls = computeControls(from, to, from.y, to.y)
+  const simpleControls = computeControls(from, to, from.y, to.y, false)
   const simplePath = bezierString(from, to, simpleControls.c1, simpleControls.c2)
 
-  // No obstacles to worry about? Fast path.
   if (obstacles.length === 0) return simplePath
 
-  // Step 2: check for collisions.
+  // Step 2: check for collisions on the straight path.
   const samples = sampleBezier(from, to, simpleControls.c1, simpleControls.c2, SAMPLE_COUNT)
   const colliding = obstacles.filter((obs) =>
     samples.some((s) => pointInRect(s, expand(obs, OBSTACLE_PADDING)))
@@ -131,36 +130,75 @@ function routedBezier(
 
   if (colliding.length === 0) return simplePath
 
-  // Step 3: route around the colliding cluster.
+  // Step 3: try routing above and below the colliding cluster, pick the
+  // path that's collision-free (preferring the side closer to the line
+  // between source and target). Both attempts use OVERSHOOT — placing the
+  // control points further than clearY so the curve's midpoint actually
+  // lands at clearY (a Bézier with c1.y = c2.y = clearY interpolates back
+  // toward source/target Y values in the middle, falling short).
   const minY = Math.min(...colliding.map((o) => o.y - OBSTACLE_PADDING))
-  const maxY = Math.max(
-    ...colliding.map((o) => o.y + o.height + OBSTACLE_PADDING)
-  )
-  const avgY = (from.y + to.y) / 2
+  const maxY = Math.max(...colliding.map((o) => o.y + o.height + OBSTACLE_PADDING))
 
-  // Pick the closer clearance — above or below.
+  const aboveCandidate = routedAround(from, to, minY, "above", obstacles)
+  const belowCandidate = routedAround(from, to, maxY, "below", obstacles)
+
+  const avgY = (from.y + to.y) / 2
   const distAbove = Math.abs(avgY - minY)
   const distBelow = Math.abs(avgY - maxY)
-  const clearY = distAbove < distBelow ? minY : maxY
 
-  // Re-issue with control points pulled to clearY. This shapes the curve
-  // through that altitude without spiking — the tangents leave the source
-  // horizontally then arc to clearY before arcing back to the target.
-  const bent = computeControls(from, to, clearY, clearY)
-  return bezierString(from, to, bent.c1, bent.c2)
+  // Prefer the closer-clearance side IF it actually clears. Fall back to
+  // the other. If neither clears, take the shorter overshoot anyway —
+  // tighter is usually less ugly than wildly bent.
+  const prefAbove = distAbove < distBelow
+  if (prefAbove && aboveCandidate.clear) return aboveCandidate.path
+  if (!prefAbove && belowCandidate.clear) return belowCandidate.path
+  if (aboveCandidate.clear) return aboveCandidate.path
+  if (belowCandidate.clear) return belowCandidate.path
+  return prefAbove ? aboveCandidate.path : belowCandidate.path
+}
+
+/**
+ * Generate a bent Bézier whose midpoint sits at `clearY` (above or below
+ * the obstacles), with control-point overshoot to compensate for the
+ * Bézier interpolation pulling the curve back toward source/target Y.
+ */
+function routedAround(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  clearY: number,
+  side: "above" | "below",
+  obstacles: ObstacleRect[]
+): { path: string; clear: boolean } {
+  // Solve for c1.y = c2.y such that the curve's midpoint Y lands at clearY.
+  //   midpoint Y = 0.125*from.y + 0.375*c1.y + 0.375*c2.y + 0.125*to.y
+  //   if c1.y = c2.y = cY:
+  //     midpoint Y = 0.125*(from.y + to.y) + 0.75*cY
+  //   cY = (clearY - 0.125*(from.y + to.y)) / 0.75
+  let cY = (clearY - 0.125 * (from.y + to.y)) / 0.75
+  // Add extra overshoot in the chosen direction so the curve clears even
+  // wider — the obstacle-side margin is more important than a tight curve.
+  const extra = 20
+  cY = side === "above" ? cY - extra : cY + extra
+
+  const bent = computeControls(from, to, cY, cY, true)
+  const path = bezierString(from, to, bent.c1, bent.c2)
+
+  const samples = sampleBezier(from, to, bent.c1, bent.c2, SAMPLE_COUNT)
+  const clear = !obstacles.some((obs) =>
+    samples.some((s) => pointInRect(s, expand(obs, OBSTACLE_PADDING)))
+  )
+  return { path, clear }
 }
 
 function computeControls(
   from: { x: number; y: number },
   to: { x: number; y: number },
   c1y: number,
-  c2y: number
+  c2y: number,
+  bending: boolean
 ): { c1: { x: number; y: number }; c2: { x: number; y: number } } {
   const dx = to.x - from.x
-  // Stronger tangent when the wire bends — wider control distance gives
-  // a smoother arc to the chosen clearance Y.
-  const bending = c1y !== from.y || c2y !== to.y
-  const tangent = Math.max(48, Math.abs(dx) * (bending ? 0.4 : 0.6))
+  const tangent = Math.max(48, Math.abs(dx) * (bending ? 0.45 : 0.6))
   return {
     c1: { x: from.x + tangent, y: c1y },
     c2: { x: to.x - tangent, y: c2y },

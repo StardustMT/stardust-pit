@@ -16,6 +16,10 @@ export interface PatchTabRailProps {
   side: "top" | "bottom"
   /** Default height for the expanded content area in pixels. */
   expandedHeight?: number
+  /** Controlled open-tab id. Pass null to collapse. */
+  openTabId?: string | null
+  /** Controlled change handler — called on user clicks (tab, close). */
+  onOpenTabIdChange?: (id: string | null) => void
   className?: string
 }
 
@@ -33,16 +37,23 @@ export function PatchTabRail({
   tabs,
   side,
   expandedHeight = 240,
+  openTabId: openTabIdProp,
+  onOpenTabIdChange,
   className,
 }: PatchTabRailProps) {
-  const [openTabId, setOpenTabId] = React.useState<string | null>(null)
+  const isControlled = openTabIdProp !== undefined
+  const [openTabIdLocal, setOpenTabIdLocal] = React.useState<string | null>(null)
+  const openTabId = isControlled ? openTabIdProp : openTabIdLocal
+  const setOpenTabId = (next: string | null) => {
+    if (!isControlled) setOpenTabIdLocal(next)
+    onOpenTabIdChange?.(next)
+  }
   const [pinned, setPinned] = React.useState(false)
 
   const openTab = openTabId ? tabs.find((t) => t.id === openTabId) : null
   const expanded = !!openTab
 
   const onTabClick = (id: string) => {
-    // Same tab clicked while open + not pinned -> collapse.
     if (openTabId === id && !pinned) {
       setOpenTabId(null)
       return
