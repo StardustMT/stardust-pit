@@ -29,7 +29,7 @@ import { ShowOutline } from "@/components/show/show-outline"
 import type { OutlineSong as ShowOutlineSong } from "@/components/show/show-outline"
 import { PatchCanvas } from "@/components/patch-graph/patch-canvas"
 import { makeNode } from "@/components/patch-graph/_catalog"
-import { RightPanel } from "@/components/patch-graph/right-panel"
+import { RightPanel, type RigSource } from "@/components/patch-graph/right-panel"
 import { PatchTabRail, type PatchTabSpec } from "@/components/patch-graph/patch-tab-rail"
 import { PatchTitleBar } from "@/components/patch-graph/patch-title-bar"
 import { LivePreview } from "@/components/patch-graph/live-preview"
@@ -38,6 +38,7 @@ import {
   type ContextMenuSection,
 } from "@/components/patch-graph/context-menu"
 import type {
+  CompositeBlock,
   GraphNode,
   NodeKind,
   PatchGraph,
@@ -190,22 +191,27 @@ function compositeBlockPatchGraph(): PatchGraph {
     { id: "out-r", label: "Out R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
   ]
   const out = makeNode("sink.main-out", { x: 1200, y: 300 })
+  const compositeId = "c1"
   return {
     nodes: [keyboard, expression, organ, leslie, out],
     wires: [
-      { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: organ.id, toPort: "midi-in" },
-      { id: "w2", fromNode: expression.id, fromPort: "out", toNode: leslie.id, toPort: "midi-speed" },
+      // External wires target the composite's promoted ports — internal
+      // ports show as "wireless" (dashed) on the organ/leslie nodes.
+      { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: compositeId, toPort: "in" },
+      { id: "w2", fromNode: expression.id, fromPort: "out", toNode: compositeId, toPort: "speed" },
+      { id: "w5", fromNode: compositeId, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
+      { id: "w6", fromNode: compositeId, fromPort: "out-r", toNode: out.id, toPort: "in-r" },
+      // Internal wires stay node-to-node inside the composite.
       { id: "w3", fromNode: organ.id, fromPort: "audio-l", toNode: leslie.id, toPort: "in-l" },
       { id: "w4", fromNode: organ.id, fromPort: "audio-r", toNode: leslie.id, toPort: "in-r" },
-      { id: "w5", fromNode: leslie.id, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
-      { id: "w6", fromNode: leslie.id, fromPort: "out-r", toNode: out.id, toPort: "in-r" },
     ],
     composites: [
       {
-        id: "c1",
+        id: compositeId,
         name: "B3 + Leslie",
         contains: [organ.id, leslie.id],
         locked: true,
+        colorHue: 60, // amber by default — picker can change
         promotedPorts: [
           { id: "in", label: "Keys", direction: "in", signal: "midi", internalNode: organ.id, internalPort: "midi-in" },
           { id: "speed", label: "Speed", direction: "in", signal: "midi", internalNode: leslie.id, internalPort: "midi-speed" },
@@ -221,17 +227,56 @@ function compositeBlockPatchGraph(): PatchGraph {
 // Stories
 // =============================================================================
 
+const DEFAULT_RIG: RigSource[] = [
+  { kind: "source.keyboard", label: "Nord Stage 3 keys" },
+  { kind: "source.sustain-pedal", label: "Sustain pedal" },
+  { kind: "source.expression-pedal", label: "Expression pedal" },
+  { kind: "source.mod-wheel", label: "Mod wheel" },
+  { kind: "source.pitch-wheel", label: "Pitch bend" },
+]
+const FULL_RIG: RigSource[] = [
+  ...DEFAULT_RIG,
+  { kind: "source.pads", label: "Akai LPD-8 pads" },
+  { kind: "source.switch", label: "Page-turn switch" },
+  { kind: "source.knob", label: "Mod knob A" },
+  { kind: "source.fader", label: "Volume fader" },
+]
+
 export const CasualPatch: Story = {
   name: "Casual patch (Keyboard → Sine → Output)",
-  render: () => <PatchEditorShell graph={casualPatchGraph()} selectedPatchId="p1.1" patchName="Cold open" songName="Prologue" />,
+  render: () => (
+    <PatchEditorShell
+      graph={casualPatchGraph()}
+      selectedPatchId="p1.1"
+      patchName="Cold open"
+      songName="Prologue"
+      rigSources={DEFAULT_RIG}
+    />
+  ),
 }
 export const SplitWithTranspose: Story = {
   name: "Split keyboard + transpose + parallel synths",
-  render: () => <PatchEditorShell graph={transposedSplitPatchGraph()} selectedPatchId="p4.2" patchName="Growl bass + pads" songName="Feed Me (Git It)" />,
+  render: () => (
+    <PatchEditorShell
+      graph={transposedSplitPatchGraph()}
+      selectedPatchId="p4.2"
+      patchName="Growl bass + pads"
+      songName="Feed Me (Git It)"
+      rigSources={DEFAULT_RIG}
+    />
+  ),
 }
 export const PianoWithSends: Story = {
   name: "Piano with EQ + reverb send",
-  render: () => <PatchEditorShell graph={pianoWithSendsPatchGraph()} selectedPatchId="p3.1" patchName="Solo piano" songName="Somewhere That's Green" />,
+  render: () => (
+    <PatchEditorShell
+      graph={pianoWithSendsPatchGraph()}
+      selectedPatchId="p3.1"
+      patchName="Solo piano"
+      songName="Somewhere That's Green"
+      rigSources={DEFAULT_RIG}
+    />
+  ),
 }
 export const WithCompositeBlock: Story = {
   name: "With composite block (B3 + Leslie, locked)",
@@ -241,6 +286,7 @@ export const WithCompositeBlock: Story = {
       selectedPatchId="p2.2"
       patchName="Chorus pads"
       songName="Skid Row (Downtown)"
+      rigSources={FULL_RIG}
       savedComposites={[
         { id: "b3", name: "B3 + Leslie", nodeCount: 2 },
         { id: "rhodes", name: "Rhodes + chorus + tape", nodeCount: 3 },
@@ -359,12 +405,14 @@ function PatchEditorShell({
   patchName,
   songName,
   savedComposites = [],
+  rigSources,
 }: {
   graph: PatchGraph
   selectedPatchId?: string
   patchName: string
   songName: string
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
+  rigSources?: RigSource[]
 }) {
   const [mode, setMode] = React.useState<AppMode>("program")
   const [graph, setGraphRaw] = React.useState<PatchGraph>(initialGraph)
@@ -403,11 +451,16 @@ function PatchEditorShell({
   // Undo / redo wrapper around setGraph
   // -----------------------------------------------------------------
 
+  // While a drag is in progress we skip per-tick history pushes — the
+  // pre-drag snapshot already lives at the top of history, so Ctrl+Z
+  // returns the whole drag in one shot.
+  const dragInProgressRef = React.useRef(false)
+
   const setGraph = React.useCallback(
-    (updater: (g: PatchGraph) => PatchGraph) => {
+    (updater: (g: PatchGraph) => PatchGraph, opts?: { skipHistory?: boolean }) => {
       setGraphRaw((g) => {
         const next = updater(g)
-        if (next !== g) {
+        if (next !== g && !opts?.skipHistory && !dragInProgressRef.current) {
           setHistory((h) => [...h, g].slice(-50))
           setRedoStack([])
         }
@@ -416,6 +469,16 @@ function PatchEditorShell({
     },
     []
   )
+
+  const onNodeDragStart = () => {
+    // Snapshot ONCE at the start of the drag; suppress per-tick pushes.
+    setHistory((h) => [...h, graph].slice(-50))
+    setRedoStack([])
+    dragInProgressRef.current = true
+  }
+  const onNodeDragEnd = () => {
+    dragInProgressRef.current = false
+  }
 
   const undo = () => {
     setHistory((h) => {
@@ -525,13 +588,16 @@ function PatchEditorShell({
   const addNode = (kind: NodeKind) => addNodeAt(kind, { x: 120, y: 160 })
 
   const moveNodes = (deltas: Array<{ id: string; x: number; y: number }>) => {
-    setGraph((g) => ({
-      ...g,
-      nodes: g.nodes.map((n) => {
-        const d = deltas.find((x) => x.id === n.id)
-        return d ? { ...n, x: d.x, y: d.y } : n
+    setGraph(
+      (g) => ({
+        ...g,
+        nodes: g.nodes.map((n) => {
+          const d = deltas.find((x) => x.id === n.id)
+          return d ? { ...n, x: d.x, y: d.y } : n
+        }),
       }),
-    }))
+      { skipHistory: true }
+    )
   }
 
   const deleteNode = (id: string) => {
@@ -587,6 +653,63 @@ function PatchEditorShell({
       ...g,
       composites: g.composites.map((c) =>
         c.id === id ? { ...c, locked: !c.locked } : c
+      ),
+    }))
+  }
+
+  const setCompositeColor = (id: string, hue: number | undefined) => {
+    setGraph((g) => ({
+      ...g,
+      composites: g.composites.map((c) =>
+        c.id === id ? { ...c, colorHue: hue } : c
+      ),
+    }))
+  }
+
+  const addPromotedPort = (
+    compositeId: string,
+    spec: { internalNode: string; internalPort: string; label: string }
+  ) => {
+    setGraph((g) => ({
+      ...g,
+      composites: g.composites.map((c) => {
+        if (c.id !== compositeId) return c
+        const target = g.nodes
+          .find((n) => n.id === spec.internalNode)
+          ?.ports.find((p) => p.id === spec.internalPort)
+        if (!target) return c
+        const id = `pp-${Date.now()}`
+        return {
+          ...c,
+          promotedPorts: [
+            ...c.promotedPorts,
+            {
+              id,
+              label: spec.label,
+              direction: target.direction,
+              signal: target.signal,
+              internalNode: spec.internalNode,
+              internalPort: spec.internalPort,
+            },
+          ],
+        }
+      }),
+    }))
+  }
+
+  const removePromotedPort = (compositeId: string, portId: string) => {
+    setGraph((g) => ({
+      ...g,
+      composites: g.composites.map((c) =>
+        c.id === compositeId
+          ? { ...c, promotedPorts: c.promotedPorts.filter((p) => p.id !== portId) }
+          : c
+      ),
+      // Drop wires that referenced this composite-port.
+      wires: g.wires.filter(
+        (w) =>
+          !(w.fromNode === compositeId && w.fromPort === portId) &&
+          !(w.toNode === compositeId && w.toPort === portId)
       ),
     }))
   }
@@ -778,11 +901,24 @@ function PatchEditorShell({
           errorCount={errorCount}
           validation={validation}
           graph={graph}
+          patchName={patchName}
+          songName={songName}
           onJumpToNode={(id) => selectNode(id)}
           onSetWireColor={(c) => selectedWire && setWireColor(selectedWire.id, c)}
           onDeleteWire={() => selectedWire && deleteWire(selectedWire.id)}
           onDeleteNode={() => selectedNode && deleteNode(selectedNode.id)}
-          onToggleCompositeLock={() => selectedComposite && toggleCompositeLock(selectedComposite.id)}
+          onToggleCompositeLock={() =>
+            selectedComposite && toggleCompositeLock(selectedComposite.id)
+          }
+          onSetCompositeColor={(hue) =>
+            selectedComposite && setCompositeColor(selectedComposite.id, hue)
+          }
+          onAddPromotedPort={(spec) =>
+            selectedComposite && addPromotedPort(selectedComposite.id, spec)
+          }
+          onRemovePromotedPort={(portId) =>
+            selectedComposite && removePromotedPort(selectedComposite.id, portId)
+          }
         />
       ),
     },
@@ -807,6 +943,8 @@ function PatchEditorShell({
             mode="program"
             currentPatchId={selectedPatchId}
             onPickPatch={(_s, p) => setSelectedPatchId(p)}
+            onAddSong={() => {}}
+            onAddPatch={() => {}}
             className="h-full"
           />
         }
@@ -814,6 +952,8 @@ function PatchEditorShell({
           <InspectorFrame>
             <RightPanel
               onAddNode={addNode}
+              rigSources={rigSources}
+              onOpenRigScreen={() => setMode("rig")}
               savedComposites={savedComposites}
             />
           </InspectorFrame>
@@ -867,6 +1007,8 @@ function PatchEditorShell({
                   onSelectNode={onCanvasSelectNode}
                   onSelectWire={selectWire}
                   onMoveNodes={moveNodes}
+                  onNodeDragStart={onNodeDragStart}
+                  onNodeDragEnd={onNodeDragEnd}
                   onCreateWire={createWire}
                   onDeleteWiresInto={deleteWiresInto}
                   onOpenCanvasMenu={openCanvasMenu}
@@ -959,26 +1101,40 @@ function SettingsTab({
   errorCount,
   validation,
   graph,
+  patchName,
+  songName,
   onJumpToNode,
   onSetWireColor,
   onDeleteWire,
   onDeleteNode,
   onToggleCompositeLock,
+  onSetCompositeColor,
+  onAddPromotedPort,
+  onRemovePromotedPort,
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
   selectedNodesCount: number
   selectedWire?: Wire
-  selectedComposite?: { id: string; name: string; locked: boolean }
+  selectedComposite?: CompositeBlock
   warningCount: number
   errorCount: number
   validation: Map<string, { level: string; message: string }>
   graph: PatchGraph
+  patchName: string
+  songName: string
   onJumpToNode: (id: string) => void
   onSetWireColor: (c: string | undefined) => void
   onDeleteWire: () => void
   onDeleteNode: () => void
   onToggleCompositeLock: () => void
+  onSetCompositeColor: (hue: number | undefined) => void
+  onAddPromotedPort: (spec: {
+    internalNode: string
+    internalPort: string
+    label: string
+  }) => void
+  onRemovePromotedPort: (portId: string) => void
 }) {
   return (
     <div className="flex h-full flex-col gap-3">
@@ -993,13 +1149,22 @@ function SettingsTab({
         ) : selectedNode ? (
           <NodeSettings node={selectedNode} onDelete={onDeleteNode} />
         ) : selectedComposite ? (
-          <CompositeSettings composite={selectedComposite} onToggleLock={onToggleCompositeLock} />
+          <CompositeSettings
+            composite={selectedComposite}
+            graph={graph}
+            onToggleLock={onToggleCompositeLock}
+            onSetColor={onSetCompositeColor}
+            onAddPromotedPort={onAddPromotedPort}
+            onRemovePromotedPort={onRemovePromotedPort}
+          />
         ) : (
           <GlobalSettings
             warningCount={warningCount}
             errorCount={errorCount}
             validation={validation}
             graph={graph}
+            patchName={patchName}
+            songName={songName}
             onJumpToNode={onJumpToNode}
           />
         )}
@@ -1010,12 +1175,47 @@ function SettingsTab({
 
 function MultiSelectInfo({ count }: { count: number }) {
   return (
-    <div className="grid h-full place-items-center text-center text-xs text-muted-foreground">
+    <div className="flex h-full flex-col gap-3 text-xs">
       <div>
-        <div className="text-foreground font-semibold">{count} nodes selected</div>
-        <div className="mt-1">
-          Drag any to move all · Delete to remove all · Wrap as composite (soon)
+        <div className="text-sm font-semibold text-foreground">
+          {count} nodes selected
         </div>
+        <div className="text-[11px] text-muted-foreground">
+          Drag any selected node to move them all together.
+        </div>
+      </div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Bulk actions
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[11px] hover:bg-muted/40"
+        >
+          <Box className="size-3.5" />
+          Wrap as composite…
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[11px] hover:bg-muted/40"
+        >
+          <Copy className="size-3.5" />
+          Duplicate
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[11px] hover:bg-muted/40"
+        >
+          <Palette className="size-3.5" />
+          Recolor wires…
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border border-destructive/40 bg-card px-2 py-1.5 text-[11px] text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="size-3.5" />
+          Delete all
+        </button>
       </div>
     </div>
   )
@@ -1026,12 +1226,16 @@ function GlobalSettings({
   errorCount,
   validation,
   graph,
+  patchName,
+  songName,
   onJumpToNode,
 }: {
   warningCount: number
   errorCount: number
   validation: Map<string, { level: string; message: string }>
   graph: PatchGraph
+  patchName: string
+  songName: string
   onJumpToNode: (id: string) => void
 }) {
   const issues = Array.from(validation.entries())
@@ -1043,13 +1247,24 @@ function GlobalSettings({
 
   return (
     <div className="grid h-full grid-cols-[1fr_1fr] gap-4 text-xs">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Patch settings
         </div>
-        <div className="rounded-md border bg-background p-3 text-muted-foreground">
-          Transition defaults, master level, post-mix FX, and per-patch
-          routing settings land here. Currently a placeholder.
+        <div className="rounded-md border bg-background">
+          <SettingRow label="Patch name" value={patchName} />
+          <SettingRow label="Song" value={songName} />
+          <SettingRow label="Master level" value="0.0 dB" slider />
+          <SettingRow label="Transition" value="Crossfade · 60ms" />
+          <SettingRow label="Send program change" value="None" />
+          <SettingRow label="Tap tempo" value="—" />
+        </div>
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Post-mix FX
+        </div>
+        <div className="rounded-md border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">+ Add post-mix effect</span>
+          {" "}— inserts a master EQ, limiter, or reverb after the main bus.
         </div>
       </div>
       <div className="flex flex-col gap-2">
@@ -1172,23 +1387,41 @@ function NodeSettings({ node, onDelete }: { node: GraphNode; onDelete: () => voi
 }
 
 function PluginUIDock({ node }: { node: GraphNode }) {
-  const uri = node.config?.pluginUri as string | undefined
+  const uri = (node.config?.pluginUri as string | undefined) ?? "Surge XT"
+  const preset = (node.config?.preset as string | undefined) ?? "Init"
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Plugin UI
-      </div>
-      <div className="grid min-h-[180px] flex-1 place-items-center rounded-md border-2 border-dashed text-xs text-muted-foreground">
-        <div className="max-w-md p-6 text-center">
-          <Box className="mx-auto mb-2 size-6 opacity-40" />
-          <div className="font-medium text-foreground">
-            {uri ?? "(no plugin loaded)"} UI docks here
-          </div>
-          <div className="mt-1">
-            CLAP / VST3 plugin GUIs embed here at native size.
-          </div>
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Plugin
         </div>
+        <span className="rounded-sm bg-muted/40 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+          {uri}
+        </span>
       </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <SettingRow label="Preset" value={preset} />
+        <SettingRow label="Bank" value="Factory · Brass" />
+        <SettingRow label="Polyphony" value="16" />
+        <SettingRow label="MIDI channel" value="Omni" />
+      </div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Quick params
+      </div>
+      <div className="flex items-stretch gap-3 rounded-md border bg-background px-3 py-2">
+        <ParamKnob label="Cutoff" value={0.62} />
+        <ParamKnob label="Reso" value={0.34} />
+        <ParamKnob label="Drive" value={0.18} />
+        <ParamKnob label="Attack" value={0.05} />
+        <ParamKnob label="Release" value={0.42} />
+      </div>
+      <button
+        type="button"
+        className="mt-auto flex items-center justify-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[11px] font-medium hover:bg-muted/40"
+      >
+        <Settings className="size-3" />
+        Open full plugin UI
+      </button>
     </div>
   )
 }
@@ -1197,14 +1430,116 @@ function KindConfig({ node }: { node: GraphNode }) {
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Configuration
+        {node.name}
       </div>
-      <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
-        <div className="max-w-md p-6 text-center">
-          Kind-specific controls for {node.kind} land here. The in-node body
-          covers quick edits today.
+      {node.kind === "midi.transpose" && (
+        <div className="rounded-md border bg-background">
+          <SettingRow label="Semitones" value={`${(node.config?.semitones as number) ?? 0}`} />
+          <SettingRow label="Velocity scale" value="1.00x" />
+          <SettingRow label="Channel remap" value="Pass-through" />
         </div>
+      )}
+      {node.kind === "audio.eq" && (
+        <div className="rounded-md border bg-background">
+          <SettingRow label="Low (80 Hz shelf)" value={`${(node.config?.low as number) ?? 0} dB`} slider />
+          <SettingRow label="Mid (1.2 kHz peaking)" value={`${(node.config?.mid as number) ?? 0} dB`} slider />
+          <SettingRow label="High (8 kHz shelf)" value={`${(node.config?.high as number) ?? 0} dB`} slider />
+          <SettingRow label="Output trim" value="0.0 dB" slider />
+        </div>
+      )}
+      {node.kind === "source.keyboard" && (
+        <div className="rounded-md border bg-background">
+          <SettingRow label="Velocity curve" value="Linear" />
+          <SettingRow label="Default channel" value="1" />
+          <SettingRow label="Zones" value={`${node.ports.filter((p) => p.config?.kind === "zone").length}`} />
+        </div>
+      )}
+      {node.kind === "instrument.sine" && (
+        <div className="rounded-md border bg-background">
+          <SettingRow label="Polyphony" value={`${(node.config?.polyphony as number) ?? 8}`} />
+          <SettingRow label="Attack" value="5 ms" slider />
+          <SettingRow label="Release" value="280 ms" slider />
+        </div>
+      )}
+      {node.kind === "sink.main-out" && (
+        <div className="rounded-md border bg-background">
+          <SettingRow label="Output device" value="System default" />
+          <SettingRow label="Output trim" value="0.0 dB" slider />
+          <SettingRow label="DC blocker" value="On" />
+        </div>
+      )}
+      {![
+        "midi.transpose",
+        "audio.eq",
+        "source.keyboard",
+        "instrument.sine",
+        "sink.main-out",
+      ].includes(node.kind) && (
+        <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
+          <div className="max-w-md p-6 text-center">
+            Kind-specific controls for {node.kind} land here.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SettingRow({
+  label,
+  value,
+  slider,
+}: {
+  label: string
+  value: string
+  slider?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b px-3 py-1.5 last:border-b-0">
+      <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        {slider && (
+          <span className="block h-1 w-20 rounded-full bg-muted/40">
+            <span className="block h-full w-1/2 rounded-full bg-primary/60" />
+          </span>
+        )}
+        <span className="truncate font-mono text-[11px] text-foreground">
+          {value}
+        </span>
       </div>
+    </div>
+  )
+}
+
+function ParamKnob({ label, value }: { label: string; value: number }) {
+  const rotation = -135 + value * 270
+  return (
+    <div className="flex flex-1 flex-col items-center gap-1">
+      <div
+        className="relative size-9 rounded-full"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
+          boxShadow:
+            "0 2px 4px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
+        }}
+      >
+        <div
+          className="absolute left-1/2 top-1/2 origin-bottom"
+          style={{
+            width: 2,
+            height: 13,
+            marginLeft: -1,
+            marginTop: -13,
+            background: "oklch(0.85 0.05 0)",
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: "bottom",
+          }}
+        />
+      </div>
+      <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
     </div>
   )
 }
@@ -1267,29 +1602,194 @@ function WireSettings({
   )
 }
 
+const COMPOSITE_HUES: Array<{ label: string; hue: number }> = [
+  { label: "Amber", hue: 60 },
+  { label: "Violet", hue: 290 },
+  { label: "Rose", hue: 0 },
+  { label: "Cyan", hue: 200 },
+  { label: "Green", hue: 145 },
+  { label: "Blue", hue: 250 },
+]
+
 function CompositeSettings({
   composite,
+  graph,
   onToggleLock,
+  onSetColor,
+  onAddPromotedPort,
+  onRemovePromotedPort,
 }: {
-  composite: { id: string; name: string; locked: boolean }
+  composite: CompositeBlock
+  graph: PatchGraph
   onToggleLock: () => void
+  onSetColor: (hue: number | undefined) => void
+  onAddPromotedPort: (spec: {
+    internalNode: string
+    internalPort: string
+    label: string
+  }) => void
+  onRemovePromotedPort: (portId: string) => void
 }) {
+  const memberNodes = graph.nodes.filter((n) => composite.contains.includes(n.id))
+  // Candidate ports = every port on member nodes that isn't already promoted.
+  const promotedKey = (nid: string, pid: string) => `${nid}:${pid}`
+  const alreadyPromoted = new Set(
+    composite.promotedPorts.map((p) => promotedKey(p.internalNode, p.internalPort))
+  )
+  const candidates = memberNodes.flatMap((n) =>
+    n.ports.map((p) => ({
+      node: n,
+      port: p,
+      taken: alreadyPromoted.has(promotedKey(n.id, p.id)),
+    }))
+  )
   return (
-    <div className="flex flex-col gap-3 text-xs">
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Composite block
+    <div className="grid h-full grid-cols-[260px_1fr] gap-4 text-xs">
+      <div className="flex flex-col gap-3 border-r pr-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Composite block
+          </div>
+          <div className="text-sm font-semibold">{composite.name}</div>
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            {composite.contains.length} nodes · {composite.promotedPorts.length} promoted
+          </div>
         </div>
-        <div className="text-sm font-semibold">{composite.name}</div>
+        <button
+          type="button"
+          onClick={onToggleLock}
+          className="flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 hover:bg-muted/40"
+        >
+          {composite.locked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
+          {composite.locked ? "Unlock (edit contents)" : "Lock (drag as one)"}
+        </button>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Color
+          </label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onSetColor(undefined)}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-md border px-2 text-[10px] hover:bg-muted/40",
+                composite.colorHue === undefined && "border-primary/40 bg-primary/5"
+              )}
+            >
+              Auto
+            </button>
+            {COMPOSITE_HUES.map((c) => (
+              <button
+                key={c.hue}
+                type="button"
+                onClick={() => onSetColor(c.hue)}
+                className={cn(
+                  "size-6 rounded-md border hover:scale-110 transition-transform",
+                  composite.colorHue === c.hue && "ring-2 ring-primary"
+                )}
+                title={c.label}
+                style={{ background: `oklch(0.7 0.18 ${c.hue})` }}
+              />
+            ))}
+          </div>
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={onToggleLock}
-        className="flex w-fit items-center gap-2 rounded-md border px-3 py-1.5 hover:bg-muted/40"
-      >
-        {composite.locked ? <Unlock className="size-3.5" /> : <Lock className="size-3.5" />}
-        {composite.locked ? "Unlock (edit contents)" : "Lock (drag as one)"}
-      </button>
+
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Promoted ports — wires connect to these instead of the internal nodes
+        </div>
+
+        {composite.promotedPorts.length === 0 && (
+          <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+            No promoted ports yet. Add one below to surface an internal port
+            on the composite frame.
+          </div>
+        )}
+        <div className="flex flex-col gap-1">
+          {composite.promotedPorts.map((p) => {
+            const internal = memberNodes.find((n) => n.id === p.internalNode)
+            const ipt = internal?.ports.find((ip) => ip.id === p.internalPort)
+            return (
+              <div
+                key={p.id}
+                className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+              >
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{
+                    background:
+                      p.signal === "midi"
+                        ? "oklch(0.7 0.15 280)"
+                        : "oklch(0.7 0.15 145)",
+                  }}
+                />
+                <span className="text-[10px] text-muted-foreground">
+                  {p.direction === "in" ? "→ in" : "← out"}
+                </span>
+                <span className="truncate font-medium">{p.label}</span>
+                <span className="ml-auto truncate text-[10px] text-muted-foreground">
+                  {internal?.name ?? "?"} · {ipt?.label ?? p.internalPort}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onRemovePromotedPort(p.id)}
+                  title="Remove promoted port"
+                  className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-2 flex flex-col gap-1.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Add a port (pick an internal port to surface)
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {candidates
+              .filter((c) => !c.taken)
+              .map((c) => (
+                <button
+                  key={`${c.node.id}:${c.port.id}`}
+                  type="button"
+                  onClick={() =>
+                    onAddPromotedPort({
+                      internalNode: c.node.id,
+                      internalPort: c.port.id,
+                      label: c.port.label,
+                    })
+                  }
+                  className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left hover:border-primary/50 hover:bg-muted/40"
+                >
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        c.port.signal === "midi"
+                          ? "oklch(0.7 0.15 280)"
+                          : "oklch(0.7 0.15 145)",
+                    }}
+                  />
+                  <span className="text-[10px] text-muted-foreground">
+                    {c.port.direction === "in" ? "→" : "←"}
+                  </span>
+                  <span className="truncate text-[11px]">{c.node.name}</span>
+                  <span className="ml-auto truncate font-mono text-[10px] text-muted-foreground">
+                    {c.port.label}
+                  </span>
+                </button>
+              ))}
+          </div>
+          {candidates.filter((c) => !c.taken).length === 0 && (
+            <div className="text-[10px] text-muted-foreground">
+              All member-node ports are already promoted.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

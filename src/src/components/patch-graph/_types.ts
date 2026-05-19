@@ -125,6 +125,15 @@ export interface Wire {
 // Composite blocks
 // =============================================================================
 
+export interface PromotedPort {
+  id: string
+  label: string
+  direction: PortDirection
+  signal: SignalKind
+  internalNode: string
+  internalPort: string
+}
+
 export interface CompositeBlock {
   id: string
   name: string
@@ -135,16 +144,14 @@ export interface CompositeBlock {
   /**
    * Promoted ports surface inner ports as the composite's own outer ports.
    * `internalNode` + `internalPort` reference the actual port; `label` is
-   * what shows on the composite outer frame.
+   * what shows on the composite outer frame. Wires may reference a composite
+   * + promotedPort.id as one of their endpoints — the renderer treats the
+   * promoted port as the wire target on the composite frame, with a
+   * "wireless" visual link to the internal port it represents.
    */
-  promotedPorts: Array<{
-    id: string
-    label: string
-    direction: PortDirection
-    signal: SignalKind
-    internalNode: string
-    internalPort: string
-  }>
+  promotedPorts: PromotedPort[]
+  /** Optional per-composite accent hue (oklch hue, 0-360). */
+  colorHue?: number
 }
 
 // =============================================================================

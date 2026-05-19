@@ -1,16 +1,20 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { NodeBody, PluginChip, hasPluginChip, pluginChipName } from "./node-body"
+import { NodeBody } from "./node-body"
 import { typeLabelFor } from "./_catalog"
 import { CLASS_COLORS, classOf, SIGNAL_DEFAULT_COLORS, type GraphNode, type Port } from "./_types"
 
-export const NODE_WIDTH = 220
-
+/** Base / minimum width. Nodes grow to fit a wider type-label or wider body. */
+export const NODE_MIN_WIDTH = 220
+const NODE_MAX_WIDTH = 360
 const HEADER_HEIGHT = 48
 const BODY_TOP_PAD = 10
 const BODY_BOTTOM_PAD = 10
 const PORT_ROW_HEIGHT = 22
 const PORT_RADIUS = 7
+
+/** Backwards compat: legacy NODE_WIDTH alias used by older callers. */
+export const NODE_WIDTH = NODE_MIN_WIDTH
 
 export interface PortDragHandle {
   onPortPointerDown?: (
@@ -37,6 +41,8 @@ export interface PatchNodeProps extends PortDragHandle {
   muted?: boolean
   connected?: Record<string, boolean>
   highlighted?: Record<string, boolean>
+  /** Port ids that are "wirelessly" represented by a composite promoted port. */
+  promotedPorts?: Record<string, boolean>
   onSelect?: () => void
   onBodyPointerDown?: (e: React.PointerEvent) => void
   onOpenMenu?: (anchor: { x: number; y: number }) => void
@@ -60,6 +66,7 @@ export function PatchNode({
   muted,
   connected,
   highlighted,
+  promotedPorts,
   onSelect,
   onBodyPointerDown,
   onOpenMenu,
@@ -79,8 +86,10 @@ export function PatchNode({
   const headerText = `oklch(0.95 0.05 ${palette.hue})`
   const accent = `oklch(0.7 0.18 ${palette.hue})`
 
-  const chipName = hasPluginChip(node) ? pluginChipName(node) : undefined
-  const typeLabel = typeLabelFor(node.kind)
+  // Header text: for instrument plugins, prefer the plugin URI/name as the
+  // type label (and drop the redundant plugin chip). For everything else,
+  // use the catalog label.
+  const typeLabel = headerTypeLabel(node)
 
   // Variable body height: tall enough to fit ALL port rows.
   const maxPortCount = Math.max(inputs.length, outputs.length)
@@ -89,10 +98,20 @@ export function PatchNode({
   const bodyContentHeight = Math.max(portsBlockHeight, widgetBlockHeight)
   const isInstrument = cls === "instrument"
 
+  // Variable width: scale to fit longest label among the type-label, the
+  // user name, and the longest port-row left+right combo.
+  const width = computeNodeWidth({
+    typeLabel,
+    name: node.name,
+    isInstrument,
+    inputs,
+    outputs,
+  })
+
   return (
     <div
       style={{
-        width: NODE_WIDTH,
+        width,
         borderColor: selected ? accent : undefined,
         boxShadow: active
           ? `0 0 0 1px ${accent}, 0 0 16px -2px ${accent}`
@@ -122,12 +141,9 @@ export function PatchNode({
         }}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-[9px] font-semibold uppercase tracking-wider opacity-70">
-              {palette.label} · {typeLabel}
-            </span>
-            {chipName && <PluginChip name={chipName} />}
-          </div>
+          <span className="block truncate text-[9px] font-semibold uppercase tracking-wider opacity-70">
+            {palette.label} · {typeLabel}
+          </span>
           <div className="truncate text-xs font-semibold">{node.name}</div>
         </div>
         {/* Header badges: validation + solo/mute (instruments) */}
@@ -241,8 +257,10 @@ export function PatchNode({
           port={port}
           side="left"
           top={portYForIndex(i)}
+          width={width}
           highlighted={highlighted?.[port.id]}
           connected={connected?.[port.id]}
+          promoted={promotedPorts?.[port.id]}
           onPointerDown={(e) => onPortPointerDown?.(node.id, port.id, e)}
           onPointerEnter={() => onPortPointerEnter?.(node.id, port.id)}
           onPointerLeave={() => onPortPointerLeave?.(node.id, port.id)}
@@ -255,8 +273,10 @@ export function PatchNode({
           port={port}
           side="right"
           top={portYForIndex(i)}
+          width={width}
           highlighted={highlighted?.[port.id]}
           connected={connected?.[port.id]}
+          promoted={promotedPorts?.[port.id]}
           onPointerDown={(e) => onPortPointerDown?.(node.id, port.id, e)}
           onPointerEnter={() => onPortPointerEnter?.(node.id, port.id)}
           onPointerLeave={() => onPortPointerLeave?.(node.id, port.id)}
@@ -267,6 +287,51 @@ export function PatchNode({
   )
 }
 
+function headerTypeLabel(node: GraphNode): string {
+  if (node.kind === "instrument.plugin") {
+    const uri = node.config?.pluginUri as string | undefined
+    if (uri) return uri
+  }
+  return typeLabelFor(node.kind)
+}
+
+// Estimate width based on character counts at the rendered font sizes.
+// The Tailwind text-[9px] header type, text-xs name, text-[10px] port labels.
+function computeNodeWidth({
+  typeLabel,
+  name,
+  isInstrument,
+  inputs,
+  outputs,
+}: {
+  typeLabel: string
+  name: string
+  isInstrument: boolean
+  inputs: Port[]
+  outputs: Port[]
+}): number {
+  // Approximate em widths (px-per-char) for each text size:
+  const TYPE_PX = 5.6 // uppercase 9px tracking-wider
+  const NAME_PX = 7.0 // 12px semibold
+  const PORT_PX = 5.6 // 10px
+
+  const headerBadgesWidth = isInstrument ? 60 : 24
+  const headerTextWidth =
+    Math.max(typeLabel.length * TYPE_PX, name.length * NAME_PX) +
+    headerBadgesWidth +
+    32 /* padding + chevron room */
+
+  // Worst port row: longest input label + longest output label + body widget min.
+  const longestIn = inputs.reduce((m, p) => Math.max(m, p.label.length), 0)
+  const longestOut = outputs.reduce((m, p) => Math.max(m, p.label.length), 0)
+  const bodyMinPx = 90 // body widget breathing room
+  const portRowWidth =
+    longestIn * PORT_PX + longestOut * PORT_PX + bodyMinPx + 32 /* gaps */
+
+  const candidate = Math.max(headerTextWidth, portRowWidth, NODE_MIN_WIDTH)
+  return Math.min(NODE_MAX_WIDTH, Math.ceil(candidate))
+}
+
 function portYForIndex(i: number): number {
   return HEADER_HEIGHT + BODY_TOP_PAD + i * PORT_ROW_HEIGHT + PORT_RADIUS + 2
 }
@@ -275,8 +340,10 @@ function PortCircle({
   port,
   side,
   top,
+  width,
   connected,
   highlighted,
+  promoted,
   onPointerDown,
   onPointerEnter,
   onPointerLeave,
@@ -285,44 +352,57 @@ function PortCircle({
   port: Port
   side: "left" | "right"
   top: number
+  width: number
   connected?: boolean
   highlighted?: boolean
+  promoted?: boolean
   onPointerDown: (e: React.PointerEvent) => void
   onPointerEnter: () => void
   onPointerLeave: () => void
   onPointerUp: () => void
 }) {
   const color = SIGNAL_DEFAULT_COLORS[port.signal]
-  const cursor =
-    side === "right"
+  const cursor = promoted
+    ? "cursor-not-allowed"
+    : side === "right"
       ? "cursor-crosshair"
       : connected
         ? "cursor-pointer"
         : "cursor-default"
+  const promotedTitle = promoted
+    ? `${port.label} — routed via composite outer port`
+    : null
   return (
     <button
       type="button"
+      disabled={promoted}
       className={cn(
         "absolute z-10 size-3.5 rounded-full border-2 border-card transition-transform",
         highlighted && "scale-150 ring-2 ring-primary/50",
+        promoted && "opacity-50",
         cursor
       )}
       style={{
-        left: side === "left" ? 0 : "100%",
+        left: side === "left" ? 0 : width,
         top,
         transform: "translate(-50%, -50%)",
-        background: color,
+        background: promoted ? "transparent" : color,
+        borderColor: promoted ? color : undefined,
+        borderStyle: promoted ? "dashed" : undefined,
       }}
       title={
-        side === "right"
-          ? `${port.label} — drag to connect`
-          : connected
-            ? `${port.label} — click to disconnect`
-            : port.label
+        promotedTitle
+          ? promotedTitle
+          : side === "right"
+            ? `${port.label} — drag to connect`
+            : connected
+              ? `${port.label} — click to disconnect`
+              : port.label
       }
       onPointerDown={(e) => {
         if (e.button !== 0) return
         e.stopPropagation()
+        if (promoted) return
         onPointerDown(e)
       }}
       onPointerEnter={onPointerEnter}
@@ -336,6 +416,16 @@ function PortCircle({
 // Geometry helpers used by the canvas to draw wires + measure node bounds.
 // =============================================================================
 
+export function nodeWidth(node: GraphNode): number {
+  return computeNodeWidth({
+    typeLabel: headerTypeLabel(node),
+    name: node.name,
+    isInstrument: classOf(node.kind) === "instrument",
+    inputs: node.ports.filter((p) => p.direction === "in"),
+    outputs: node.ports.filter((p) => p.direction === "out"),
+  })
+}
+
 export function portOffset(
   node: GraphNode,
   portId: string
@@ -346,7 +436,7 @@ export function portOffset(
   const indexInSide = sideList.findIndex((p) => p.id === portId)
   if (indexInSide < 0) return null
   return {
-    x: port.direction === "in" ? 0 : NODE_WIDTH,
+    x: port.direction === "in" ? 0 : nodeWidth(node),
     y: portYForIndex(indexInSide),
   }
 }
@@ -376,7 +466,7 @@ export function nodeBounds(node: GraphNode): {
   return {
     x: node.x,
     y: node.y,
-    width: NODE_WIDTH,
+    width: nodeWidth(node),
     height: HEADER_HEIGHT + bodyHeight,
   }
 }

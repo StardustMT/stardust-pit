@@ -2,13 +2,16 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { PatchNode, absolutePortPosition, nodeBounds } from "./patch-node"
 import { PatchWire } from "./patch-wire"
-import { CompositeBlockFrame } from "./composite-block"
+import {
+  CompositeBlockFrame,
+  compositePortPosition,
+} from "./composite-block"
 import type {
+  CompositeBlock,
   GraphNode,
   NodeKind,
   PatchGraph,
   SignalKind,
-  Wire,
 } from "./_types"
 
 // =============================================================================
@@ -62,6 +65,10 @@ export interface PatchCanvasProps {
   onSelectNode?: (id: string | undefined, additive?: boolean) => void
   onSelectWire?: (id: string | undefined) => void
   onMoveNodes?: (deltas: Array<{ id: string; x: number; y: number }>) => void
+  /** Fired once at the start of a node drag — host should snapshot for undo. */
+  onNodeDragStart?: () => void
+  /** Fired once at the end of a node drag — host can commit / clear flags. */
+  onNodeDragEnd?: () => void
   onCreateWire?: (params: {
     fromNode: string
     fromPort: string
@@ -108,6 +115,8 @@ export function PatchCanvas({
   onSelectNode,
   onSelectWire,
   onMoveNodes,
+  onNodeDragStart,
+  onNodeDragEnd,
   onCreateWire,
   onDeleteWiresInto,
   onOpenCanvasMenu,
@@ -150,7 +159,58 @@ export function PatchCanvas({
     return m
   }, [graph.nodes])
 
+  // Composite lookup + per-composite member-node list (for port positioning).
+  const compositeMap = React.useMemo(() => {
+    const m = new Map<string, { composite: CompositeBlock; members: GraphNode[] }>()
+    for (const c of graph.composites) {
+      const members = graph.nodes.filter((n) => c.contains.includes(n.id))
+      m.set(c.id, { composite: c, members })
+    }
+    return m
+  }, [graph.composites, graph.nodes])
+
+  // Set of "internal" node ports that are surfaced via a composite promoted
+  // port — these render with a dimmed/wireless visual on the node and reject
+  // direct wiring (force the user to wire to the composite instead).
+  const internalPromotedPortsByNode = React.useMemo(() => {
+    const m = new Map<string, Record<string, boolean>>()
+    for (const c of graph.composites) {
+      for (const p of c.promotedPorts) {
+        let row = m.get(p.internalNode)
+        if (!row) {
+          row = {}
+          m.set(p.internalNode, row)
+        }
+        row[p.internalPort] = true
+      }
+    }
+    return m
+  }, [graph.composites])
+
+  // Resolve an endpoint id to a port position. The id may be a node id OR
+  // a composite id — composites first, then nodes.
+  const resolveEndpoint = React.useCallback(
+    (id: string, portId: string): { x: number; y: number; signal: SignalKind } | null => {
+      const comp = compositeMap.get(id)
+      if (comp) {
+        const pos = compositePortPosition(comp.composite, comp.members, portId)
+        const port = comp.composite.promotedPorts.find((p) => p.id === portId)
+        if (!pos || !port) return null
+        return { ...pos, signal: port.signal }
+      }
+      const node = nodeMap.get(id)
+      if (!node) return null
+      const pos = absolutePortPosition(node, portId)
+      const port = node.ports.find((p) => p.id === portId)
+      if (!pos || !port) return null
+      return { ...pos, signal: port.signal }
+    },
+    [compositeMap, nodeMap]
+  )
+
   const connectedPorts = React.useMemo(() => {
+    // Tracks BOTH node and composite ports — keyed by owner id (node id or
+    // composite id), value is the set of port ids on that owner.
     const m = new Map<string, Set<string>>()
     for (const w of graph.wires) {
       addPort(m, w.fromNode, w.fromPort)
@@ -226,9 +286,12 @@ export function PatchCanvas({
   // Auto-bring-into-view when selection changes
   // -------------------------------------------------------------------------
 
+  // Bring the selected node into view only when it's outside the visible
+  // canvas rect (or about to be occluded by the bottom panel). If the node
+  // is already comfortably in frame, do not pan — the user is likely
+  // looking at a logical group around it.
   const lastBroughtIntoViewRef = React.useRef<string | undefined>(undefined)
   React.useEffect(() => {
-    // Only fire on a single selected node (group movement is by user).
     if (!selectedSet || selectedSet.size !== 1) {
       lastBroughtIntoViewRef.current = undefined
       return
@@ -241,18 +304,28 @@ export function PatchCanvas({
     if (!node || !surface) return
     const rect = surface.getBoundingClientRect()
     const bounds = nodeBounds(node)
-    // Target the node center, biased a bit upward so the bottom panel
-    // doesn't occlude.
-    const targetScreenX = rect.width / 2
-    const targetScreenY = rect.height * 0.4
-    const nodeCenterCanvas = {
-      x: bounds.x + bounds.width / 2,
-      y: bounds.y + bounds.height / 2,
-    }
-    const newPanX = targetScreenX - nodeCenterCanvas.x * view.zoom
-    const newPanY = targetScreenY - nodeCenterCanvas.y * view.zoom
+    const PADDING = 24
+    // Node bounds projected to screen space.
+    const screenLeft = bounds.x * view.zoom + view.panX
+    const screenTop = bounds.y * view.zoom + view.panY
+    const screenRight = (bounds.x + bounds.width) * view.zoom + view.panX
+    const screenBottom = (bounds.y + bounds.height) * view.zoom + view.panY
+    // Visible region inside the surface — leave room for the bottom panel.
+    const visTop = PADDING
+    const visBottom = rect.height - PADDING
+    const visLeft = PADDING
+    const visRight = rect.width - PADDING
+
+    let dx = 0
+    let dy = 0
+    if (screenLeft < visLeft) dx = visLeft - screenLeft
+    else if (screenRight > visRight) dx = visRight - screenRight
+    if (screenTop < visTop) dy = visTop - screenTop
+    else if (screenBottom > visBottom) dy = visBottom - screenBottom
+
+    if (dx === 0 && dy === 0) return
     setSmoothPan(true)
-    setView((v) => ({ ...v, panX: newPanX, panY: newPanY }))
+    setView((v) => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSet])
 
@@ -277,6 +350,7 @@ export function PatchCanvas({
       if (!n) continue
       offsets.set(id, { offsetX: cs.x - n.x, offsetY: cs.y - n.y })
     }
+    onNodeDragStart?.()
     setNodeDrag({ primaryNodeId: nodeId, offsets })
   }
 
@@ -286,70 +360,81 @@ export function PatchCanvas({
 
   const [wireDrag, setWireDrag] = React.useState<WireDrag | null>(null)
 
+  /** Look up a port on either a node or a composite. */
+  const lookupPort = (
+    id: string,
+    portId: string
+  ): { direction: "in" | "out"; signal: SignalKind } | null => {
+    const comp = compositeMap.get(id)
+    if (comp) {
+      const p = comp.composite.promotedPorts.find((p) => p.id === portId)
+      return p ? { direction: p.direction, signal: p.signal } : null
+    }
+    const node = nodeMap.get(id)
+    if (!node) return null
+    const p = node.ports.find((p) => p.id === portId)
+    return p ? { direction: p.direction, signal: p.signal } : null
+  }
+
   const onPortPointerDown = (
-    nodeId: string,
+    ownerId: string,
     portId: string,
     e: React.PointerEvent
   ) => {
-    const node = nodeMap.get(nodeId)
-    if (!node) return
-    const port = node.ports.find((p) => p.id === portId)
+    const port = lookupPort(ownerId, portId)
     if (!port) return
 
     if (port.direction === "in") {
-      onDeleteWiresInto?.(nodeId, portId)
+      onDeleteWiresInto?.(ownerId, portId)
       return
     }
 
-    const anchor = absolutePortPosition(node, portId)
+    const anchor = resolveEndpoint(ownerId, portId)
     if (!anchor) return
     const cs = toCanvasSpace(e)
     setWireDrag({
-      fromNode: nodeId,
+      fromNode: ownerId,
       fromPort: portId,
       signal: port.signal,
-      anchor,
+      anchor: { x: anchor.x, y: anchor.y },
       cursor: cs,
       hovering: null,
     })
   }
 
-  const onPortPointerEnter = (nodeId: string, portId: string) => {
+  const onPortPointerEnter = (ownerId: string, portId: string) => {
     if (!wireDrag) return
-    const node = nodeMap.get(nodeId)
-    if (!node) return
-    const port = node.ports.find((p) => p.id === portId)
+    const port = lookupPort(ownerId, portId)
     if (!port) return
     if (port.signal !== wireDrag.signal) return
     if (port.direction !== "in") return
-    if (nodeId === wireDrag.fromNode) return
-    setWireDrag({ ...wireDrag, hovering: { nodeId, portId } })
+    if (ownerId === wireDrag.fromNode) return
+    setWireDrag({ ...wireDrag, hovering: { nodeId: ownerId, portId } })
   }
 
-  const onPortPointerLeave = (nodeId: string, portId: string) => {
+  const onPortPointerLeave = (ownerId: string, portId: string) => {
     if (!wireDrag?.hovering) return
     if (
-      wireDrag.hovering.nodeId === nodeId &&
+      wireDrag.hovering.nodeId === ownerId &&
       wireDrag.hovering.portId === portId
     ) {
       setWireDrag({ ...wireDrag, hovering: null })
     }
   }
 
-  const onPortPointerUp = (nodeId: string, portId: string) => {
+  const onPortPointerUp = (ownerId: string, portId: string) => {
     if (!wireDrag) return
-    const node = nodeMap.get(nodeId)
-    const port = node?.ports.find((p) => p.id === portId)
+    const port = lookupPort(ownerId, portId)
     if (
       port &&
       port.signal === wireDrag.signal &&
       port.direction === "in" &&
-      nodeId !== wireDrag.fromNode
+      ownerId !== wireDrag.fromNode
     ) {
       onCreateWire?.({
         fromNode: wireDrag.fromNode,
         fromPort: wireDrag.fromPort,
-        toNode: nodeId,
+        toNode: ownerId,
         toPort: portId,
       })
     }
@@ -391,11 +476,15 @@ export function PatchCanvas({
       }
     }
     const onUp = () => {
-      if (nodeDrag) setNodeDrag(null)
+      if (nodeDrag) {
+        setNodeDrag(null)
+        onNodeDragEnd?.()
+      }
       if (wireDrag) setWireDrag(null)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (nodeDrag) onNodeDragEnd?.()
         setNodeDrag(null)
         setWireDrag(null)
       }
@@ -408,7 +497,7 @@ export function PatchCanvas({
       window.removeEventListener("pointerup", onUp)
       window.removeEventListener("keydown", onKey)
     }
-  }, [nodeDrag, wireDrag, onMoveNodes, toCanvasSpace])
+  }, [nodeDrag, wireDrag, onMoveNodes, toCanvasSpace, onNodeDragEnd])
 
   // -------------------------------------------------------------------------
   // Library drag-to-place (HTML5 DnD)
@@ -449,6 +538,34 @@ export function PatchCanvas({
       onWheel={onWheel}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onPointerDown={(e) => {
+        // Catch pan starts that land outside the 5000×5000 inner surface
+        // (i.e. after the user has panned origin into view).
+        if (e.target !== e.currentTarget) return
+        if (e.button !== 0 && e.button !== 1) return
+        setSmoothPan(false)
+        setPanDrag({
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startPanX: view.panX,
+          startPanY: view.panY,
+        })
+        onSelectNode?.(undefined)
+        onSelectWire?.(undefined)
+      }}
+      onContextMenu={(e) => {
+        // Outer-surface fallback so right-click ALWAYS gets the canvas menu
+        // even past the inner surface bounds (where the browser default
+        // menu would otherwise appear).
+        if (!onOpenCanvasMenu) return
+        const t = e.target as HTMLElement
+        if (t.closest("[data-node-root]")) return
+        if (t.closest("[data-composite-root]")) return
+        if (t.closest("[data-wire-hit]")) return
+        e.preventDefault()
+        const cs = toCanvasSpace(e)
+        onOpenCanvasMenu({ x: e.clientX, y: e.clientY }, cs)
+      }}
     >
       {/* Inner transformed surface. Pan handler lives here so empty-space
           clicks are detected via e.target === e.currentTarget. */}
@@ -482,16 +599,25 @@ export function PatchCanvas({
           const memberNodes = graph.nodes.filter((n) =>
             c.contains.includes(n.id)
           )
+          const cnxSet = connectedPorts.get(c.id)
+          const connectedMap: Record<string, boolean> = {}
+          if (cnxSet) for (const p of cnxSet) connectedMap[p] = true
           return (
             <div data-composite-root key={c.id}>
               <CompositeBlockFrame
                 composite={c}
                 nodes={memberNodes}
+                connectedPorts={connectedMap}
+                highlightedPorts={highlightedByNode.get(c.id)}
                 onOpenMenu={
                   onOpenCompositeMenu
                     ? (anchor) => onOpenCompositeMenu(c.id, anchor)
                     : undefined
                 }
+                onPortPointerDown={(portId, e) => onPortPointerDown(c.id, portId, e)}
+                onPortPointerEnter={(portId) => onPortPointerEnter(c.id, portId)}
+                onPortPointerLeave={(portId) => onPortPointerLeave(c.id, portId)}
+                onPortPointerUp={(portId) => onPortPointerUp(c.id, portId)}
               />
             </div>
           )
@@ -505,17 +631,20 @@ export function PatchCanvas({
           <g style={{ pointerEvents: "auto" }}>
             {graph.wires.map((w) => {
               const obstacles = computeObstacles(graph.nodes, w)
+              const from = resolveEndpoint(w.fromNode, w.fromPort)
+              const to = resolveEndpoint(w.toNode, w.toPort)
+              if (!from || !to) return null
               return (
-                <WireRenderer
+                <PatchWire
                   key={w.id}
-                  wire={w}
-                  nodeMap={nodeMap}
-                  obstacles={obstacles}
+                  from={{ x: from.x, y: from.y }}
+                  to={{ x: to.x, y: to.y }}
+                  signal={from.signal}
+                  color={w.color}
                   selected={w.id === selectedWireId}
                   active={activeWireIds?.has(w.id)}
-                  onSelect={
-                    onSelectWire ? () => onSelectWire(w.id) : undefined
-                  }
+                  obstacles={obstacles}
+                  onSelect={onSelectWire ? () => onSelectWire(w.id) : undefined}
                   onOpenMenu={
                     onOpenWireMenu
                       ? (anchor) => onOpenWireMenu(w.id, anchor)
@@ -524,7 +653,9 @@ export function PatchCanvas({
                 />
               )
             })}
-            {wireDrag && <GhostWire drag={wireDrag} nodeMap={nodeMap} />}
+            {wireDrag && (
+              <GhostWire drag={wireDrag} resolve={resolveEndpoint} />
+            )}
           </g>
         </svg>
 
@@ -551,6 +682,7 @@ export function PatchCanvas({
                 muted={muted?.has(n.id)}
                 connected={connectedMap}
                 highlighted={highlightedByNode.get(n.id)}
+                promotedPorts={internalPromotedPortsByNode.get(n.id)}
                 onSelect={
                   onSelectNode
                     ? () => onSelectNode(n.id, false /* set via outer shift handling */)
@@ -603,60 +735,17 @@ export function PatchCanvas({
 // Helpers
 // =============================================================================
 
-function WireRenderer({
-  wire,
-  nodeMap,
-  obstacles,
-  selected,
-  active,
-  onSelect,
-  onOpenMenu,
-}: {
-  wire: Wire
-  nodeMap: Map<string, GraphNode>
-  obstacles: ReturnType<typeof computeObstacles>
-  selected?: boolean
-  active?: boolean
-  onSelect?: () => void
-  onOpenMenu?: (anchor: { x: number; y: number }) => void
-}) {
-  const fromNode = nodeMap.get(wire.fromNode)
-  const toNode = nodeMap.get(wire.toNode)
-  if (!fromNode || !toNode) return null
-  const from = absolutePortPosition(fromNode, wire.fromPort)
-  const to = absolutePortPosition(toNode, wire.toPort)
-  if (!from || !to) return null
-  const port = fromNode.ports.find((p) => p.id === wire.fromPort)
-  if (!port) return null
-  return (
-    <PatchWire
-      from={from}
-      to={to}
-      signal={port.signal}
-      color={wire.color}
-      selected={selected}
-      active={active}
-      obstacles={obstacles}
-      onSelect={onSelect}
-      onOpenMenu={onOpenMenu}
-    />
-  )
-}
-
 function GhostWire({
   drag,
-  nodeMap,
+  resolve,
 }: {
   drag: WireDrag
-  nodeMap: Map<string, GraphNode>
+  resolve: (id: string, portId: string) => { x: number; y: number; signal: SignalKind } | null
 }) {
   let to = drag.cursor
   if (drag.hovering) {
-    const targetNode = nodeMap.get(drag.hovering.nodeId)
-    if (targetNode) {
-      const snap = absolutePortPosition(targetNode, drag.hovering.portId)
-      if (snap) to = snap
-    }
+    const snap = resolve(drag.hovering.nodeId, drag.hovering.portId)
+    if (snap) to = { x: snap.x, y: snap.y }
   }
   return (
     <PatchWire from={drag.anchor} to={to} signal={drag.signal} selected />
