@@ -1,6 +1,8 @@
 # Icons
 
-Tauri expects the following files in this directory before `cargo tauri build` succeeds:
+Tauri's build script (`tauri-build`) validates every file listed under
+`bundle.icon` in `tauri.conf.json`. Missing files → `cargo build` fails
+with a build-script-exit-1 error even in `bun dev`.
 
 | File | Format | Used for |
 |---|---|---|
@@ -10,6 +12,19 @@ Tauri expects the following files in this directory before `cargo tauri build` s
 | `icon.icns` | macOS bundle icon | macOS app bundle |
 | `icon.ico` | Windows multi-resolution icon | Windows installer |
 
-These don't exist yet. Generate them from a 1024×1024 source PNG using `cargo tauri icon path/to/source.png` once branding lands.
+## Current state — placeholders
 
-This file is in v0.1 as a placeholder so the icons directory isn't empty in source control.
+What lives in this directory today is a procedurally-generated
+placeholder: a dark square with a warm-orange dot. It satisfies the
+build but is **not the brand**. Replace it the moment real artwork
+lands.
+
+## Replacing with real branding
+
+```bash
+# From the project root, with a 1024×1024 source PNG:
+bun x tauri icon path/to/stardust-logo.png
+```
+
+That regenerates every file in this directory at the right size +
+format. Commit the result.
