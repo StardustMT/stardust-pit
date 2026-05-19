@@ -1373,6 +1373,8 @@ function SettingsTab({
   onAddZone,
   onRemoveZone,
   onResizeZone,
+  onSetZoneColor,
+  onSetZoneWireFollows,
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
