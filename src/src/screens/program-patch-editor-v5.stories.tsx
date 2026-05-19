@@ -297,6 +297,32 @@ export const WithCompositeBlock: Story = {
 }
 
 // =============================================================================
+// Zone defaults
+// =============================================================================
+
+/**
+ * Suggest a sensible next zone range when adding to an existing set.
+ * Tries to split the highest zone in half; falls back to a fresh octave
+ * above the highest existing zone, capped at MIDI 108.
+ */
+function nextZoneRange(
+  zones: Array<{ config?: { kind: string; fromNote?: number; toNote?: number } }>
+): { fromNote: number; toNote: number } {
+  if (zones.length === 0) return { fromNote: 60, toNote: 84 }
+  const highest = zones
+    .map((z) => z.config as { fromNote: number; toNote: number })
+    .reduce((a, b) => (b.toNote > a.toNote ? b : a))
+  const start = Math.min(108, highest.toNote + 1)
+  const end = Math.min(108, start + 11)
+  if (end <= start) {
+    // Already at the top — split the highest zone in half.
+    const mid = Math.floor((highest.fromNote + highest.toNote) / 2)
+    return { fromNote: mid + 1, toNote: highest.toNote }
+  }
+  return { fromNote: start, toNote: end }
+}
+
+// =============================================================================
 // Wire color palette
 // =============================================================================
 
@@ -735,6 +761,79 @@ function PatchEditorShell({
     }))
   }
 
+  /**
+   * Convert a keyboard's single full-range out into N zone outs, or append
+   * a new zone to one that already has zones. Existing wires from the
+   * pre-zoned single out get re-routed to the new top zone so the existing
+   * sound stays connected by default.
+   */
+  const addZone = (nodeId: string) => {
+    setGraph((g) => {
+      const node = g.nodes.find((n) => n.id === nodeId)
+      if (!node) return g
+      const existingZones = node.ports.filter(
+        (p) => p.direction === "out" && p.config?.kind === "zone"
+      )
+      const newId = `zone-${Date.now()}`
+      // Pick a sensible default range based on what's already there.
+      const range = nextZoneRange(existingZones)
+      const newPort = {
+        id: newId,
+        label: "Zone",
+        signal: "midi" as const,
+        direction: "out" as const,
+        config: { kind: "zone" as const, fromNote: range.fromNote, toNote: range.toNote },
+      }
+      // If this is the FIRST zone, also need to seed a second zone from
+      // the implicit "full" range so the user has something to split — and
+      // migrate any wires off the single "out" onto the first zone.
+      if (existingZones.length === 0) {
+        const singleOut = node.ports.find((p) => p.direction === "out")
+        if (!singleOut) return g
+        const lowZone = {
+          id: `zone-low-${Date.now()}`,
+          label: "Zone",
+          signal: "midi" as const,
+          direction: "out" as const,
+          config: { kind: "zone" as const, fromNote: 36, toNote: 59 },
+        }
+        const highZone = {
+          ...newPort,
+          config: { kind: "zone" as const, fromNote: 60, toNote: 108 },
+        }
+        return {
+          ...g,
+          nodes: g.nodes.map((n) =>
+            n.id !== nodeId ? n : { ...n, ports: [lowZone, highZone] }
+          ),
+          wires: g.wires.map((w) =>
+            w.fromNode === nodeId && w.fromPort === singleOut.id
+              ? { ...w, fromPort: highZone.id }
+              : w
+          ),
+        }
+      }
+      return {
+        ...g,
+        nodes: g.nodes.map((n) =>
+          n.id !== nodeId ? n : { ...n, ports: [...n.ports, newPort] }
+        ),
+      }
+    })
+  }
+
+  const removeZone = (nodeId: string, portId: string) => {
+    setGraph((g) => ({
+      ...g,
+      nodes: g.nodes.map((n) =>
+        n.id !== nodeId ? n : { ...n, ports: n.ports.filter((p) => p.id !== portId) }
+      ),
+      wires: g.wires.filter(
+        (w) => !(w.fromNode === nodeId && w.fromPort === portId)
+      ),
+    }))
+  }
+
   const toggleSolo = (id: string) => {
     setSoloed((s) => {
       const next = new Set(s)
@@ -919,6 +1018,9 @@ function PatchEditorShell({
           onRemovePromotedPort={(portId) =>
             selectedComposite && removePromotedPort(selectedComposite.id, portId)
           }
+          onAddZone={(nodeId) => addZone(nodeId)}
+          onRemoveZone={(nodeId, portId) => removeZone(nodeId, portId)}
+          onResizeZone={resizeZone}
         />
       ),
     },
@@ -1111,6 +1213,9 @@ function SettingsTab({
   onSetCompositeColor,
   onAddPromotedPort,
   onRemovePromotedPort,
+  onAddZone,
+  onRemoveZone,
+  onResizeZone,
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
@@ -1135,6 +1240,13 @@ function SettingsTab({
     label: string
   }) => void
   onRemovePromotedPort: (portId: string) => void
+  onAddZone: (nodeId: string) => void
+  onRemoveZone: (nodeId: string, portId: string) => void
+  onResizeZone: (
+    nodeId: string,
+    portId: string,
+    range: { fromNote: number; toNote: number }
+  ) => void
 }) {
   return (
     <div className="flex h-full flex-col gap-3">
@@ -1147,7 +1259,13 @@ function SettingsTab({
         ) : selectedWire ? (
           <WireSettings wire={selectedWire} onSetColor={onSetWireColor} onDelete={onDeleteWire} />
         ) : selectedNode ? (
-          <NodeSettings node={selectedNode} onDelete={onDeleteNode} />
+          <NodeSettings
+            node={selectedNode}
+            onDelete={onDeleteNode}
+            onAddZone={onAddZone}
+            onRemoveZone={onRemoveZone}
+            onResizeZone={onResizeZone}
+          />
         ) : selectedComposite ? (
           <CompositeSettings
             composite={selectedComposite}
@@ -1324,7 +1442,23 @@ function GlobalSettings({
   )
 }
 
-function NodeSettings({ node, onDelete }: { node: GraphNode; onDelete: () => void }) {
+function NodeSettings({
+  node,
+  onDelete,
+  onAddZone,
+  onRemoveZone,
+  onResizeZone,
+}: {
+  node: GraphNode
+  onDelete: () => void
+  onAddZone: (nodeId: string) => void
+  onRemoveZone: (nodeId: string, portId: string) => void
+  onResizeZone: (
+    nodeId: string,
+    portId: string,
+    range: { fromNote: number; toNote: number }
+  ) => void
+}) {
   const isPlugin = node.kind === "instrument.plugin"
   return (
     <div className="grid h-full grid-cols-[280px_1fr] gap-4 text-xs">
@@ -1361,7 +1495,7 @@ function NodeSettings({ node, onDelete }: { node: GraphNode; onDelete: () => voi
                   <span className="text-[10px] text-muted-foreground">
                     {p.direction === "in" ? "←" : "→"}
                   </span>
-                  <span className="truncate">{p.label}</span>
+                  <span className="truncate">{portRowLabel(p)}</span>
                 </div>
                 <span className="ml-2 shrink-0 font-mono text-[10px] text-muted-foreground">
                   {p.signal}
@@ -1380,10 +1514,31 @@ function NodeSettings({ node, onDelete }: { node: GraphNode; onDelete: () => voi
         </button>
       </div>
       <div className="min-w-0">
-        {isPlugin ? <PluginUIDock node={node} /> : <KindConfig node={node} />}
+        {isPlugin ? (
+          <PluginUIDock node={node} />
+        ) : (
+          <KindConfig
+            node={node}
+            onAddZone={() => onAddZone(node.id)}
+            onRemoveZone={(portId) => onRemoveZone(node.id, portId)}
+            onResizeZone={(portId, range) => onResizeZone(node.id, portId, range)}
+          />
+        )}
       </div>
     </div>
   )
+}
+
+function portRowLabel(p: GraphNode["ports"][number]): string {
+  if (p.config?.kind === "zone") {
+    return `${noteNameFor(p.config.fromNote)}–${noteNameFor(p.config.toNote)}`
+  }
+  return p.label
+}
+
+function noteNameFor(midi: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
 }
 
 function PluginUIDock({ node }: { node: GraphNode }) {
@@ -1426,7 +1581,17 @@ function PluginUIDock({ node }: { node: GraphNode }) {
   )
 }
 
-function KindConfig({ node }: { node: GraphNode }) {
+function KindConfig({
+  node,
+  onAddZone,
+  onRemoveZone,
+  onResizeZone,
+}: {
+  node: GraphNode
+  onAddZone: () => void
+  onRemoveZone: (portId: string) => void
+  onResizeZone: (portId: string, range: { fromNote: number; toNote: number }) => void
+}) {
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1448,11 +1613,12 @@ function KindConfig({ node }: { node: GraphNode }) {
         </div>
       )}
       {node.kind === "source.keyboard" && (
-        <div className="rounded-md border bg-background">
-          <SettingRow label="Velocity curve" value="Linear" />
-          <SettingRow label="Default channel" value="1" />
-          <SettingRow label="Zones" value={`${node.ports.filter((p) => p.config?.kind === "zone").length}`} />
-        </div>
+        <KeyboardZoneEditor
+          node={node}
+          onAddZone={onAddZone}
+          onRemoveZone={onRemoveZone}
+          onResizeZone={onResizeZone}
+        />
       )}
       {node.kind === "instrument.sine" && (
         <div className="rounded-md border bg-background">
@@ -1481,6 +1647,139 @@ function KindConfig({ node }: { node: GraphNode }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function KeyboardZoneEditor({
+  node,
+  onAddZone,
+  onRemoveZone,
+  onResizeZone,
+}: {
+  node: GraphNode
+  onAddZone: () => void
+  onRemoveZone: (portId: string) => void
+  onResizeZone: (portId: string, range: { fromNote: number; toNote: number }) => void
+}) {
+  const zonePorts = node.ports.filter(
+    (p) => p.direction === "out" && p.config?.kind === "zone"
+  )
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="rounded-md border bg-background">
+        <SettingRow label="Velocity curve" value="Linear" />
+        <SettingRow label="Default channel" value="1" />
+      </div>
+
+      <div className="flex items-center justify-between pt-1">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Zones ({zonePorts.length || "full range"})
+        </div>
+        <button
+          type="button"
+          onClick={onAddZone}
+          className="flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[10px] font-medium hover:bg-muted/40"
+          title="Split the keyboard into another range"
+        >
+          <Plus className="size-3" />
+          Add zone
+        </button>
+      </div>
+
+      {zonePorts.length === 0 ? (
+        <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+          No zones yet — the whole keyboard sends to the single MIDI out.
+          Add a zone to split the range and route different parts to
+          different sounds.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {zonePorts.map((p) => {
+            const cfg = p.config as { kind: "zone"; fromNote: number; toNote: number }
+            return (
+              <div
+                key={p.id}
+                className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+              >
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: "oklch(0.7 0.15 280)" }}
+                />
+                <span className="font-mono text-[11px]">
+                  {noteNameFor(cfg.fromNote)}–{noteNameFor(cfg.toNote)}
+                </span>
+                <div className="ml-auto flex items-center gap-1">
+                  <NoteStepper
+                    label="Low"
+                    value={cfg.fromNote}
+                    onChange={(v) =>
+                      onResizeZone(p.id, {
+                        fromNote: Math.min(v, cfg.toNote),
+                        toNote: cfg.toNote,
+                      })
+                    }
+                  />
+                  <NoteStepper
+                    label="High"
+                    value={cfg.toNote}
+                    onChange={(v) =>
+                      onResizeZone(p.id, {
+                        fromNote: cfg.fromNote,
+                        toNote: Math.max(v, cfg.fromNote),
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRemoveZone(p.id)}
+                    title="Remove zone"
+                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NoteStepper({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+}) {
+  const clamp = (v: number) => Math.max(0, Math.min(127, v))
+  return (
+    <div className="flex items-center gap-0.5 rounded border bg-card px-1">
+      <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(clamp(value - 1))}
+        className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        −
+      </button>
+      <span className="min-w-[28px] text-center font-mono text-[10px]">
+        {noteNameFor(value)}
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(clamp(value + 1))}
+        className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        +
+      </button>
     </div>
   )
 }

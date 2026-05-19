@@ -223,7 +223,7 @@ export function PatchNode({
               )}
               style={{ height: PORT_ROW_HEIGHT }}
             >
-              {p.label}
+              {portDisplayLabel(p)}
             </span>
           ))}
         </div>
@@ -235,18 +235,22 @@ export function PatchNode({
 
         {/* Output port labels (right column) */}
         <div className="flex flex-col items-end justify-start gap-0">
-          {outputs.map((p, i) => (
-            <span
-              key={p.id}
-              className={cn(
-                "flex items-center text-[10px] leading-none text-muted-foreground",
-                highlighted?.[p.id] && "text-foreground font-medium"
-              )}
-              style={{ height: PORT_ROW_HEIGHT }}
-            >
-              {p.label}
-            </span>
-          ))}
+          {outputs.map((p, i) => {
+            const isZone = p.config?.kind === "zone"
+            return (
+              <span
+                key={p.id}
+                className={cn(
+                  "flex items-center text-[10px] leading-none text-muted-foreground",
+                  isZone && "font-mono",
+                  highlighted?.[p.id] && "text-foreground font-medium"
+                )}
+                style={{ height: PORT_ROW_HEIGHT }}
+              >
+                {portDisplayLabel(p)}
+              </span>
+            )
+          })}
         </div>
       </div>
 
@@ -469,6 +473,23 @@ export function nodeBounds(node: GraphNode): {
     width: nodeWidth(node),
     height: HEADER_HEIGHT + bodyHeight,
   }
+}
+
+/**
+ * What label to render next to a port. For zone outputs, show the live
+ * note range (e.g. "C2–B3") so the keyboard's per-zone routing reads at
+ * a glance. For everything else, use the user-set port label.
+ */
+function portDisplayLabel(p: Port): string {
+  if (p.config?.kind === "zone") {
+    return `${noteName(p.config.fromNote)}–${noteName(p.config.toNote)}`
+  }
+  return p.label
+}
+
+function noteName(midi: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
 }
 
 function minBodyHeightForKind(kind: GraphNode["kind"]): number {

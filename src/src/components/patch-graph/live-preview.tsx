@@ -2,7 +2,7 @@ import * as React from "react"
 import { CircleDot, Eye, Footprints, Move3D, MoveVertical, Sliders } from "lucide-react"
 import { Keyboard, type KeyboardZone } from "@/components/rig/keyboard"
 import { cn } from "@/lib/utils"
-import { classOf, CLASS_COLORS, type GraphNode, type PatchGraph } from "./_types"
+import { classOf, CLASS_COLORS, type CompositeBlock, type GraphNode, type PatchGraph } from "./_types"
 
 export interface LivePreviewProps {
   graph: PatchGraph
@@ -110,30 +110,26 @@ function KeyboardPreview({
     if (zonePorts.length === 0) {
       const single = keyboard.ports.find((p) => p.direction === "out")
       if (!single) return []
-      const instr = findDownstreamInstrument(graph, keyboard.id, single.id)
+      const r = findDownstreamTarget(graph, keyboard.id, single.id)
       return [
         {
           id: single.id,
-          label: instr ? instr.name : "Unwired",
+          label: r?.displayName ?? "Unwired",
           fromNote,
           toNote,
-          color: instr
-            ? `oklch(0.65 0.20 ${CLASS_COLORS.instrument.hue})`
-            : "oklch(0.4 0.02 0)",
+          color: zoneColor(r),
         },
       ]
     }
     return zonePorts.map((p) => {
       const cfg = p.config as { kind: "zone"; fromNote: number; toNote: number }
-      const instr = findDownstreamInstrument(graph, keyboard.id, p.id)
+      const r = findDownstreamTarget(graph, keyboard.id, p.id)
       return {
         id: p.id,
-        label: instr ? instr.name : p.label,
+        label: r?.displayName ?? p.label,
         fromNote: cfg.fromNote,
         toNote: cfg.toNote,
-        color: instr
-          ? `oklch(0.65 0.20 ${CLASS_COLORS.instrument.hue})`
-          : "oklch(0.4 0.02 0)",
+        color: zoneColor(r),
       }
     })
   }, [graph, keyboard])
@@ -166,9 +162,7 @@ function ControllerTile({ graph, node }: { graph: PatchGraph; node: GraphNode })
   const Icon = iconForKind(node.kind)
   // Where does this controller route to? (for label colour cue)
   const out = node.ports.find((p) => p.direction === "out")
-  const target = out
-    ? findDownstreamInstrument(graph, node.id, out.id)
-    : null
+  const target = out ? findDownstreamTarget(graph, node.id, out.id) : null
   return (
     <div
       className={cn(
@@ -180,7 +174,7 @@ function ControllerTile({ graph, node }: { graph: PatchGraph; node: GraphNode })
       <div className="text-center text-[10px]">
         <div className="font-semibold">{node.name}</div>
         <div className="text-muted-foreground">
-          {target ? `→ ${target.name}` : "Unwired"}
+          {target ? `→ ${target.displayName}` : "Unwired"}
         </div>
       </div>
     </div>
@@ -209,16 +203,40 @@ function iconForKind(kind: GraphNode["kind"]): React.ComponentType<{ className?:
 }
 
 // =============================================================================
-// Downstream-instrument BFS
+// Downstream-route resolution
 // =============================================================================
 
-function findDownstreamInstrument(
+/**
+ * Result of walking downstream from a source port.
+ *
+ * - `instrument` is the actual sound source the route reaches (used as a
+ *   fallback color cue and for technical correctness).
+ * - `enteringComposite` is the FIRST composite block the route enters, if
+ *   any. When set, the user is conceptually playing "into this block" —
+ *   a composite the user named themselves — so the preview should show
+ *   the composite's name instead of the contained instrument's.
+ * - `displayName` is what the preview should show. Composite name wins
+ *   over instrument name when a composite is on the route, because the
+ *   user named that block for a reason.
+ */
+interface DownstreamTarget {
+  instrument: GraphNode
+  enteringComposite?: CompositeBlock
+  displayName: string
+}
+
+function findDownstreamTarget(
   graph: PatchGraph,
   fromNode: string,
   fromPort: string
-): GraphNode | null {
+): DownstreamTarget | null {
   const visited = new Set<string>()
-  type Q = { nodeId: string; portId: string }
+  type Q = {
+    nodeId: string
+    portId: string
+    /** First composite seen on this path, if any. */
+    enteringComposite?: CompositeBlock
+  }
   const queue: Q[] = [{ nodeId: fromNode, portId: fromPort }]
 
   while (queue.length > 0) {
@@ -231,10 +249,23 @@ function findDownstreamInstrument(
       (w) => w.fromNode === cur.nodeId && w.fromPort === cur.portId
     )
     for (const w of outgoing) {
-      const r = visitTarget(graph, w.toNode, w.toPort)
+      const r = visitTarget(graph, w.toNode, w.toPort, cur.enteringComposite)
       if (!r) continue
-      if (r.instrument) return r.instrument
-      for (const next of r.continueFrom) queue.push(next)
+      if (r.instrument) {
+        const enteringComposite = r.enteringComposite
+        return {
+          instrument: r.instrument,
+          enteringComposite,
+          displayName: enteringComposite ? enteringComposite.name : r.instrument.name,
+        }
+      }
+      for (const next of r.continueFrom) {
+        queue.push({
+          nodeId: next.nodeId,
+          portId: next.portId,
+          enteringComposite: r.enteringComposite,
+        })
+      }
     }
   }
   return null
@@ -243,19 +274,27 @@ function findDownstreamInstrument(
 /**
  * Resolve a wire endpoint to either an instrument hit or a list of next
  * ports to keep searching from. Composite promoted ports are aliased
- * transparently to the internal node port they map to — to the preview
- * (and to signal flow generally) a wire into the composite "Keys" port is
- * indistinguishable from a wire into the contained organ's MIDI in.
+ * transparently to the internal node port they map to (technical
+ * correctness) but the *first* composite the route enters is remembered
+ * so the preview can show the user-named block instead of the internal
+ * instrument.
  */
 function visitTarget(
   graph: PatchGraph,
   ownerId: string,
-  portId: string
-): { instrument?: GraphNode; continueFrom: Array<{ nodeId: string; portId: string }> } | null {
+  portId: string,
+  enteringComposite: CompositeBlock | undefined
+): {
+  instrument?: GraphNode
+  enteringComposite?: CompositeBlock
+  continueFrom: Array<{ nodeId: string; portId: string }>
+} | null {
   const node = graph.nodes.find((n) => n.id === ownerId)
   if (node) {
-    if (classOf(node.kind) === "instrument") return { instrument: node, continueFrom: [] }
+    if (classOf(node.kind) === "instrument")
+      return { instrument: node, enteringComposite, continueFrom: [] }
     return {
+      enteringComposite,
       continueFrom: node.ports
         .filter((p) => p.direction === "out")
         .map((p) => ({ nodeId: node.id, portId: p.id })),
@@ -265,9 +304,18 @@ function visitTarget(
   if (!composite) return null
   const promoted = composite.promotedPorts.find((p) => p.id === portId)
   if (!promoted) return null
-  // Alias: jump straight to the internal node + port the promoted port
-  // represents, then process as if we'd landed there directly.
-  return visitTarget(graph, promoted.internalNode, promoted.internalPort)
+  // Record this composite as the entering one if we haven't seen one yet.
+  const nextEntering = enteringComposite ?? composite
+  return visitTarget(graph, promoted.internalNode, promoted.internalPort, nextEntering)
+}
+
+/** Zone-label color cue based on the route's target. */
+function zoneColor(r: DownstreamTarget | null): string {
+  if (!r) return "oklch(0.4 0.02 0)"
+  if (r.enteringComposite?.colorHue !== undefined) {
+    return `oklch(0.65 0.20 ${r.enteringComposite.colorHue})`
+  }
+  return `oklch(0.65 0.20 ${CLASS_COLORS.instrument.hue})`
 }
 
 function countWhiteKeysInRange(fromNote: number, toNote: number): number {
