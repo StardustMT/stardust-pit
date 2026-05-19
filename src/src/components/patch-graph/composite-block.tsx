@@ -5,13 +5,13 @@ import { nodeBounds } from "./patch-node"
 import { SIGNAL_DEFAULT_COLORS, type CompositeBlock, type GraphNode } from "./_types"
 
 /**
- * Padding between the tightest bounding box of contained nodes and the
- * composite frame. Small enough that the frame "hugs" the cluster while
- * leaving room for the title chip on the top edge.
+ * Padding around the contained nodes. Larger on left/right than top/bottom
+ * to give the promoted-port labels room to live INSIDE the frame without
+ * occluding internal nodes or colliding with external wires.
  */
-const PADDING_X = 16
+const PADDING_X = 72
 const PADDING_TOP = 28
-const PADDING_BOTTOM = 16
+const PADDING_BOTTOM = 18
 
 export interface CompositeBlockFrameProps {
   composite: CompositeBlock
@@ -24,13 +24,13 @@ export interface CompositeBlockFrameProps {
 /**
  * Labelled bounding box wrapping a sub-graph.
  *
- * • Bounds derived from accurate per-node geometry (no over-padding at
- *   the bottom from a fixed APPROX_NODE_HEIGHT estimate).
- * • Title chip sits on the top border, high-contrast (card bg + accent
- *   border + foreground text). Click opens the composite menu; the lock
- *   icon inside the chip toggles edit/locked state.
- * • Promoted ports render ON the left and right borders, sitting half
- *   inside / half outside (PCB-style).
+ * Promoted port labels render INSIDE the composite (just inboard of the
+ * border), backed by a translucent chip so they stay readable against any
+ * internal-node fill. The left/right padding reserves enough horizontal
+ * space for label widths so they don't overlap content.
+ *
+ * Composite border is high-contrast (amber locked, violet unlocked).
+ * Title chip on the top edge is the menu-open click target.
  */
 export function CompositeBlockFrame({
   composite,
@@ -77,7 +77,7 @@ export function CompositeBlockFrame({
         onOpenMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {/* Title chip on top border */}
+      {/* Title chip on top edge */}
       <button
         type="button"
         className={cn(
@@ -116,18 +116,9 @@ export function CompositeBlockFrame({
         <span className="text-muted-foreground">{nodes.length} blocks</span>
       </button>
 
-      {/* Promoted input ports on left edge — overlap the border (PCB-style) */}
-      <PortColumn
-        ports={inputs}
-        side="left"
-        height={rect.height}
-      />
-      {/* Promoted output ports on right edge */}
-      <PortColumn
-        ports={outputs}
-        side="right"
-        height={rect.height}
-      />
+      {/* Promoted input ports — labels INSIDE on the left */}
+      <PortColumn ports={inputs} side="left" height={rect.height} />
+      <PortColumn ports={outputs} side="right" height={rect.height} />
     </div>
   )
 }
@@ -142,9 +133,8 @@ function PortColumn({
   height: number
 }) {
   if (ports.length === 0) return null
-  // Distribute ports evenly along the side, with minimum spacing.
-  const minSpacing = 28
   const usable = Math.max(0, height - PADDING_TOP - PADDING_BOTTOM)
+  const minSpacing = 32
   const spacing = Math.min(usable / Math.max(1, ports.length), minSpacing * 1.5)
   const totalUsed = spacing * (ports.length - 1)
   const startY = (height - totalUsed) / 2
@@ -179,30 +169,31 @@ function PromotedPort({
 }) {
   const color = SIGNAL_DEFAULT_COLORS[signal]
   return (
-    <div
-      className={cn(
-        "pointer-events-auto absolute flex items-center gap-1.5",
-        side === "left" ? "flex-row" : "flex-row-reverse"
-      )}
-      style={{
-        top: top - 6,
-        [side === "left" ? "left" : "right"]: -7,
-      }}
-    >
+    <>
+      {/* Circle: straddles the border */}
       <span
         aria-hidden="true"
-        className="block size-3 shrink-0 rounded-full border-2 border-card"
-        style={{ background: color }}
+        className="pointer-events-none absolute block size-3.5 rounded-full border-2 border-card"
+        style={{
+          [side === "left" ? "left" : "right"]: -7,
+          top: top - 7,
+          background: color,
+        }}
       />
+      {/* Label: INSIDE the composite, with backdrop so it reads over any fill */}
       <span
         className={cn(
-          "rounded px-1 text-[9px] font-medium uppercase tracking-wider text-muted-foreground",
-          "bg-card/80 backdrop-blur-sm"
+          "pointer-events-none absolute whitespace-nowrap rounded px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground",
+          "bg-card/85 backdrop-blur-sm"
         )}
+        style={{
+          [side === "left" ? "left" : "right"]: 12,
+          top: top - 8,
+        }}
       >
         {label}
       </span>
-    </div>
+    </>
   )
 }
 

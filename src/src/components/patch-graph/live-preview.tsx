@@ -1,16 +1,12 @@
 import * as React from "react"
-import { Eye } from "lucide-react"
+import { CircleDot, Eye, Footprints, Move3D, MoveVertical, Sliders } from "lucide-react"
 import { Keyboard, type KeyboardZone } from "@/components/rig/keyboard"
+import { cn } from "@/lib/utils"
 import { classOf, CLASS_COLORS, type GraphNode, type PatchGraph } from "./_types"
 
 export interface LivePreviewProps {
   graph: PatchGraph
   patchName: string
-  /**
-   * Called when the user drags a zone edge to resize it. Receives the
-   * keyboard node id, the port id (the zone's source port), and the new
-   * note range — caller updates the port config in the graph.
-   */
   onResizeZone?: (
     nodeId: string,
     portId: string,
@@ -19,22 +15,17 @@ export interface LivePreviewProps {
 }
 
 /**
- * Live preview surface — renders the patch's performance widgets
- * (currently: keyboards with colored zones) at performance scale. Each
- * zone is colored + labelled by following the wire chain DOWNSTREAM from
- * the zone's output port until an instrument node is found (transparently
- * passing through MIDI processors like transpose). If nothing is wired,
- * the zone shows as inactive (gray).
- *
- * Zones are user-resizable here — drag a zone's edge to extend or shrink
- * the range. The graph's source-port config updates via `onResizeZone`.
+ * Live performance preview. Renders performance-scale widgets for every
+ * source node in the patch (not just keyboards) so adding pads or other
+ * controllers shows up immediately. Zone colours/labels follow the wire
+ * chain DOWNSTREAM through MIDI processors to the eventual instrument.
  */
 export function LivePreview({
   graph,
   patchName,
   onResizeZone,
 }: LivePreviewProps) {
-  const keyboards = graph.nodes.filter((n) => n.kind === "source.keyboard")
+  const sources = graph.nodes.filter((n) => classOf(n.kind) === "source")
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = React.useState(800)
 
@@ -47,6 +38,9 @@ export function LivePreview({
     return () => observer.disconnect()
   }, [])
 
+  const keyboards = sources.filter((n) => n.kind === "source.keyboard")
+  const others = sources.filter((n) => n.kind !== "source.keyboard")
+
   return (
     <div ref={containerRef} className="flex h-full flex-col gap-4 p-1">
       <div className="text-center">
@@ -56,15 +50,15 @@ export function LivePreview({
         <div className="text-base font-semibold">{patchName}</div>
       </div>
 
-      {keyboards.length === 0 ? (
+      {sources.length === 0 ? (
         <div className="grid flex-1 place-items-center text-center text-xs text-muted-foreground">
           <div className="max-w-xs">
             <Eye className="mx-auto mb-2 size-6 opacity-40" />
-            Add a keyboard source to the patch to preview live zones here.
+            Add any source (keyboard, pads, pedal, knob…) to preview here.
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {keyboards.map((kb) => (
             <KeyboardPreview
               key={kb.id}
@@ -74,6 +68,19 @@ export function LivePreview({
               onResizeZone={onResizeZone}
             />
           ))}
+
+          {others.length > 0 && (
+            <div className="rounded-md border bg-card/40 p-3">
+              <div className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Other controllers
+              </div>
+              <div className="flex flex-wrap items-end gap-4">
+                {others.map((n) => (
+                  <ControllerTile key={n.id} graph={graph} node={n} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -94,17 +101,12 @@ function KeyboardPreview({
   const fromNote = 21
   const toNote = 108
   const whiteKeyCount = countWhiteKeysInRange(fromNote, toNote)
-  // Fit the keyboard to the container width (minus a small margin for the
-  // card padding). Minimum white key width = 8px so it stays usable on
-  // narrow screens.
-  const whiteKeyWidth = Math.max(8, Math.floor((containerWidth - 48) / whiteKeyCount))
+  const whiteKeyWidth = Math.max(8, Math.floor((containerWidth - 60) / whiteKeyCount))
 
   const zones = React.useMemo<KeyboardZone[]>(() => {
     const zonePorts = keyboard.ports.filter(
       (p) => p.direction === "out" && p.config?.kind === "zone"
     )
-    // If no explicit zones, synthesize one full-range zone using the wired
-    // instrument (so single-out keyboards still show a colored band).
     if (zonePorts.length === 0) {
       const single = keyboard.ports.find((p) => p.direction === "out")
       if (!single) return []
@@ -150,9 +152,9 @@ function KeyboardPreview({
           toNote={toNote}
           whiteKeyWidth={whiteKeyWidth}
           zones={zones}
-          onZoneChange={(zoneId, range) => {
+          onZoneChange={(zoneId, range) =>
             onResizeZone?.(keyboard.id, zoneId, range)
-          }}
+          }
           labelOctaves
         />
       </div>
@@ -160,15 +162,56 @@ function KeyboardPreview({
   )
 }
 
+function ControllerTile({ graph, node }: { graph: PatchGraph; node: GraphNode }) {
+  const Icon = iconForKind(node.kind)
+  // Where does this controller route to? (for label colour cue)
+  const out = node.ports.find((p) => p.direction === "out")
+  const target = out
+    ? findDownstreamInstrument(graph, node.id, out.id)
+    : null
+  return (
+    <div
+      className={cn(
+        "flex w-24 flex-col items-center gap-2 rounded-md border bg-card px-3 py-3",
+        target ? "border-primary/30" : "border-dashed"
+      )}
+    >
+      <Icon className="size-6 text-muted-foreground" />
+      <div className="text-center text-[10px]">
+        <div className="font-semibold">{node.name}</div>
+        <div className="text-muted-foreground">
+          {target ? `→ ${target.name}` : "Unwired"}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function iconForKind(kind: GraphNode["kind"]): React.ComponentType<{ className?: string }> {
+  switch (kind) {
+    case "source.pads":
+      return CircleDot
+    case "source.switch":
+    case "source.sustain-pedal":
+      return Footprints
+    case "source.expression-pedal":
+      return Move3D
+    case "source.pitch-wheel":
+    case "source.mod-wheel":
+      return MoveVertical
+    case "source.knob":
+      return CircleDot
+    case "source.fader":
+      return Sliders
+    default:
+      return CircleDot
+  }
+}
+
 // =============================================================================
-// Graph traversal — find the instrument a source port eventually reaches
+// Downstream-instrument BFS
 // =============================================================================
 
-/**
- * BFS from a source output port through the wire graph; return the first
- * instrument node reached. MIDI processors (transpose, mix, etc.) are
- * traversed transparently — the user cares about the eventual sound source.
- */
 function findDownstreamInstrument(
   graph: PatchGraph,
   fromNode: string,
@@ -184,7 +227,6 @@ function findDownstreamInstrument(
     if (visited.has(key)) continue
     visited.add(key)
 
-    // Wires going FROM this port
     const outgoing = graph.wires.filter(
       (w) => w.fromNode === cur.nodeId && w.fromPort === cur.portId
     )
@@ -192,7 +234,6 @@ function findDownstreamInstrument(
       const target = graph.nodes.find((n) => n.id === w.toNode)
       if (!target) continue
       if (classOf(target.kind) === "instrument") return target
-      // Otherwise (MIDI processor / mix / router): continue from its outputs
       for (const out of target.ports.filter((p) => p.direction === "out")) {
         queue.push({ nodeId: target.id, portId: out.id })
       }
@@ -202,7 +243,6 @@ function findDownstreamInstrument(
 }
 
 function countWhiteKeysInRange(fromNote: number, toNote: number): number {
-  // 7 white keys per octave; quick walk through the range to be exact at edges.
   const whitePCs = new Set([0, 2, 4, 5, 7, 9, 11])
   let count = 0
   for (let n = fromNote; n <= toNote; n++) {

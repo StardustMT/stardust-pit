@@ -94,11 +94,26 @@ function LibraryContent({ onAddNode }: { onAddNode?: (kind: NodeKind) => void })
           </div>
           <div className="flex flex-col gap-1">
             {items.map((spec) => (
-              <button
+              <div
                 key={spec.kind}
-                type="button"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "copy"
+                  e.dataTransfer.setData(
+                    "application/x-stardust-node-kind",
+                    spec.kind
+                  )
+                  // A simple drag image hint.
+                  e.dataTransfer.setData("text/plain", spec.label)
+                }}
                 onClick={() => onAddNode?.(spec.kind)}
-                className="group flex w-full items-center gap-3 rounded-md border bg-background px-2.5 py-2 text-left hover:border-primary/50 hover:bg-muted/40"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onAddNode?.(spec.kind)
+                }}
+                className="group flex w-full cursor-grab items-center gap-3 rounded-md border bg-background px-2.5 py-2 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 active:cursor-grabbing"
+                title="Click to add at center, or drag onto the canvas"
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-semibold">{spec.label}</div>
@@ -109,7 +124,7 @@ function LibraryContent({ onAddNode }: { onAddNode?: (kind: NodeKind) => void })
                 <span className="grid size-6 shrink-0 place-items-center text-muted-foreground group-hover:text-primary">
                   <Plus className="size-3" />
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         </div>

@@ -82,19 +82,31 @@ function SimpleIconBody({
 }
 
 function KeyboardBody({ node }: { node: GraphNode }) {
-  const zones = node.ports.filter(
-    (p) => p.direction === "out" && p.config?.kind === "zone"
-  )
-  const caption =
-    zones.length > 0
-      ? `${zones.length} zone${zones.length === 1 ? "" : "s"}`
-      : "full range"
+  const zones = node.ports
+    .filter((p) => p.direction === "out" && p.config?.kind === "zone")
+    .map((p) => p.config as { kind: "zone"; fromNote: number; toNote: number })
+
   return (
-    <div className="flex flex-col items-center gap-1 py-2">
+    <div className="flex flex-col items-center gap-0.5 py-1">
       <Piano className="size-5 text-muted-foreground" />
-      <span className="text-[10px] text-muted-foreground">{caption}</span>
+      {zones.length === 0 ? (
+        <span className="text-[10px] text-muted-foreground">full range</span>
+      ) : (
+        <div className="flex flex-col items-center gap-px text-[9px] font-mono text-muted-foreground">
+          {zones.map((z, i) => (
+            <span key={i}>
+              {noteName(z.fromNote)}–{noteName(z.toNote)}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
+}
+
+function noteName(midi: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
 }
 
 function PadsBody({ node }: { node: GraphNode }) {

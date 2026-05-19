@@ -213,6 +213,11 @@ export function findSpec(kind: NodeKind): NodeSpec | undefined {
   return NODE_CATALOG.find((s) => s.kind === kind)
 }
 
+/** Human label for a node *type* (e.g. "Keyboard", "Transpose", "EQ"). */
+export function typeLabelFor(kind: NodeKind): string {
+  return findSpec(kind)?.label ?? kind
+}
+
 let nextId = 1
 export function makeNode(
   kind: NodeKind,

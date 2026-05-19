@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
 import {
+  AlertTriangle,
   Box,
   ChevronRight,
   Copy,
@@ -9,10 +10,12 @@ import {
   Palette,
   Pencil,
   Plus,
+  Redo2,
   RotateCcw,
   Settings,
   Settings2,
   Trash2,
+  Undo2,
   Unlock,
   Volume2,
   Waves,
@@ -51,7 +54,7 @@ export default meta
 type Story = StoryObj
 
 // =============================================================================
-// Seed: songs / patches
+// Seed
 // =============================================================================
 
 const LSOH_SONGS: ShowOutlineSong[] = [
@@ -77,17 +80,12 @@ const LSOH_SONGS: ShowOutlineSong[] = [
   ] },
 ]
 
-// =============================================================================
-// Seed graphs
-// =============================================================================
-
 function casualPatchGraph(): PatchGraph {
-  const keyboard = makeNode("source.keyboard", { x: 80, y: 200 })
+  const keyboard = makeNode("source.keyboard", { x: 80, y: 220 })
   keyboard.name = "Main keyboard"
-  const sine = makeNode("instrument.sine", { x: 420, y: 200 })
+  const sine = makeNode("instrument.sine", { x: 420, y: 220 })
   sine.name = "Sine synth"
-  const out = makeNode("sink.main-out", { x: 760, y: 200 })
-
+  const out = makeNode("sink.main-out", { x: 760, y: 220 })
   return {
     nodes: [keyboard, sine, out],
     wires: [
@@ -103,22 +101,21 @@ function transposedSplitPatchGraph(): PatchGraph {
   const keyboard = makeNode("source.keyboard", { x: 80, y: 240 })
   keyboard.name = "Main keyboard"
   keyboard.ports = [
-    { id: "out-low", label: "Low (C2–B3)", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 36, toNote: 59 } },
-    { id: "out-high", label: "High (C4–C8)", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 60, toNote: 108 } },
+    { id: "out-low", label: "Low", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 36, toNote: 59 } },
+    { id: "out-high", label: "High", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 60, toNote: 108 } },
   ]
-  const transpose = makeNode("midi.transpose", { x: 400, y: 100 })
-  transpose.name = "−12 semitones"
+  const transpose = makeNode("midi.transpose", { x: 420, y: 100 })
+  transpose.name = "Down an octave"
   transpose.config = { semitones: -12 }
-  const bass = makeNode("instrument.plugin", { x: 700, y: 100 })
+  const bass = makeNode("instrument.plugin", { x: 720, y: 100 })
   bass.name = "Bass synth"
   bass.config = { pluginUri: "Surge XT", preset: "MS-20 Bass" }
-  const lead = makeNode("instrument.plugin", { x: 700, y: 400 })
+  const lead = makeNode("instrument.plugin", { x: 720, y: 400 })
   lead.name = "Lead synth"
   lead.config = { pluginUri: "Surge XT", preset: "Modern Brass" }
-  const mix = makeNode("audio.mix", { x: 1040, y: 260 })
+  const mix = makeNode("audio.mix", { x: 1060, y: 260 })
   mix.name = "Sum"
-  const out = makeNode("sink.main-out", { x: 1380, y: 260 })
-
+  const out = makeNode("sink.main-out", { x: 1400, y: 260 })
   return {
     nodes: [keyboard, transpose, bass, lead, mix, out],
     wires: [
@@ -137,22 +134,21 @@ function transposedSplitPatchGraph(): PatchGraph {
 }
 
 function pianoWithSendsPatchGraph(): PatchGraph {
-  const keyboard = makeNode("source.keyboard", { x: 80, y: 180 })
+  const keyboard = makeNode("source.keyboard", { x: 80, y: 200 })
   keyboard.name = "Main keyboard"
-  const sustain = makeNode("source.sustain-pedal", { x: 80, y: 440 })
+  const sustain = makeNode("source.sustain-pedal", { x: 80, y: 460 })
   sustain.name = "Sustain"
-  const piano = makeNode("instrument.plugin", { x: 460, y: 240 })
+  const piano = makeNode("instrument.plugin", { x: 460, y: 260 })
   piano.name = "Piano"
   piano.config = { pluginUri: "Surge XT", preset: "Felt Piano" }
   const eq = makeNode("audio.eq", { x: 820, y: 140 })
   eq.name = "EQ"
   eq.config = { low: 2, mid: -1, high: 3 }
-  const reverb = makeNode("audio.eq", { x: 820, y: 420 })
+  const reverb = makeNode("audio.eq", { x: 820, y: 440 })
   reverb.name = "Reverb"
-  const mix = makeNode("audio.mix", { x: 1140, y: 260 })
+  const mix = makeNode("audio.mix", { x: 1140, y: 280 })
   mix.name = "Dry + wet"
-  const out = makeNode("sink.main-out", { x: 1460, y: 260 })
-
+  const out = makeNode("sink.main-out", { x: 1480, y: 280 })
   return {
     nodes: [keyboard, sustain, piano, eq, reverb, mix, out],
     wires: [
@@ -176,20 +172,29 @@ function pianoWithSendsPatchGraph(): PatchGraph {
 function compositeBlockPatchGraph(): PatchGraph {
   const keyboard = makeNode("source.keyboard", { x: 80, y: 220 })
   keyboard.name = "Main keyboard"
-  const expression = makeNode("source.expression-pedal", { x: 80, y: 480 })
+  const expression = makeNode("source.expression-pedal", { x: 80, y: 540 })
   expression.name = "Leslie speed pedal"
-  const organ = makeNode("instrument.plugin", { x: 500, y: 220 })
+  const organ = makeNode("instrument.plugin", { x: 520, y: 220 })
   organ.name = "B3 organ"
   organ.config = { pluginUri: "Surge XT", preset: "Tonewheel" }
-  const leslie = makeNode("audio.eq", { x: 820, y: 220 })
+  // Leslie sim has BOTH an audio chain and a MIDI control input (for the
+  // expression pedal driving rotation speed) — fixes the missing-port
+  // issue from the previous review.
+  const leslie = makeNode("audio.eq", { x: 840, y: 220 })
   leslie.name = "Leslie sim"
-  const out = makeNode("sink.main-out", { x: 1180, y: 300 })
-
+  leslie.ports = [
+    { id: "in-l", label: "In L", signal: "audio", direction: "in", config: { kind: "stereo", channel: "L" } },
+    { id: "in-r", label: "In R", signal: "audio", direction: "in", config: { kind: "stereo", channel: "R" } },
+    { id: "midi-speed", label: "Speed CC", signal: "midi", direction: "in" },
+    { id: "out-l", label: "Out L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
+    { id: "out-r", label: "Out R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
+  ]
+  const out = makeNode("sink.main-out", { x: 1200, y: 300 })
   return {
     nodes: [keyboard, expression, organ, leslie, out],
     wires: [
       { id: "w1", fromNode: keyboard.id, fromPort: "out", toNode: organ.id, toPort: "midi-in" },
-      { id: "w2", fromNode: expression.id, fromPort: "out", toNode: leslie.id, toPort: "in-l" },
+      { id: "w2", fromNode: expression.id, fromPort: "out", toNode: leslie.id, toPort: "midi-speed" },
       { id: "w3", fromNode: organ.id, fromPort: "audio-l", toNode: leslie.id, toPort: "in-l" },
       { id: "w4", fromNode: organ.id, fromPort: "audio-r", toNode: leslie.id, toPort: "in-r" },
       { id: "w5", fromNode: leslie.id, fromPort: "out-l", toNode: out.id, toPort: "in-l" },
@@ -203,6 +208,7 @@ function compositeBlockPatchGraph(): PatchGraph {
         locked: true,
         promotedPorts: [
           { id: "in", label: "Keys", direction: "in", signal: "midi", internalNode: organ.id, internalPort: "midi-in" },
+          { id: "speed", label: "Speed", direction: "in", signal: "midi", internalNode: leslie.id, internalPort: "midi-speed" },
           { id: "out-l", label: "Out L", direction: "out", signal: "audio", internalNode: leslie.id, internalPort: "out-l" },
           { id: "out-r", label: "Out R", direction: "out", signal: "audio", internalNode: leslie.id, internalPort: "out-r" },
         ],
@@ -217,40 +223,16 @@ function compositeBlockPatchGraph(): PatchGraph {
 
 export const CasualPatch: Story = {
   name: "Casual patch (Keyboard → Sine → Output)",
-  render: () => (
-    <PatchEditorShell
-      graph={casualPatchGraph()}
-      selectedPatchId="p1.1"
-      patchName="Cold open"
-      songName="Prologue"
-    />
-  ),
+  render: () => <PatchEditorShell graph={casualPatchGraph()} selectedPatchId="p1.1" patchName="Cold open" songName="Prologue" />,
 }
-
 export const SplitWithTranspose: Story = {
   name: "Split keyboard + transpose + parallel synths",
-  render: () => (
-    <PatchEditorShell
-      graph={transposedSplitPatchGraph()}
-      selectedPatchId="p4.2"
-      patchName="Growl bass + pads"
-      songName="Feed Me (Git It)"
-    />
-  ),
+  render: () => <PatchEditorShell graph={transposedSplitPatchGraph()} selectedPatchId="p4.2" patchName="Growl bass + pads" songName="Feed Me (Git It)" />,
 }
-
 export const PianoWithSends: Story = {
   name: "Piano with EQ + reverb send",
-  render: () => (
-    <PatchEditorShell
-      graph={pianoWithSendsPatchGraph()}
-      selectedPatchId="p3.1"
-      patchName="Solo piano"
-      songName="Somewhere That's Green"
-    />
-  ),
+  render: () => <PatchEditorShell graph={pianoWithSendsPatchGraph()} selectedPatchId="p3.1" patchName="Solo piano" songName="Somewhere That's Green" />,
 }
-
 export const WithCompositeBlock: Story = {
   name: "With composite block (B3 + Leslie, locked)",
   render: () => (
@@ -272,7 +254,7 @@ export const WithCompositeBlock: Story = {
 // Wire color palette
 // =============================================================================
 
-const WIRE_COLORS: Array<{ id: string; label: string; color: string }> = [
+const WIRE_COLORS = [
   { id: "red", label: "Red", color: "oklch(0.7 0.20 25)" },
   { id: "orange", label: "Orange", color: "oklch(0.75 0.18 55)" },
   { id: "yellow", label: "Yellow", color: "oklch(0.85 0.18 95)" },
@@ -293,6 +275,71 @@ function colorDot(color: string): React.ComponentType<{ className?: string }> {
   )
   C.displayName = `ColorDot(${color})`
   return C
+}
+
+// =============================================================================
+// Patch validation
+// =============================================================================
+
+interface ValidationIssue {
+  level: "warning" | "error"
+  message: string
+}
+
+function validatePatch(graph: PatchGraph): Map<string, ValidationIssue> {
+  const issues = new Map<string, ValidationIssue>()
+  for (const node of graph.nodes) {
+    const cls = classOf(node.kind)
+    const inputs = node.ports.filter((p) => p.direction === "in")
+    const outputs = node.ports.filter((p) => p.direction === "out")
+    const incomingByPort = new Set<string>()
+    const outgoingByPort = new Set<string>()
+    for (const w of graph.wires) {
+      if (w.toNode === node.id) incomingByPort.add(w.toPort)
+      if (w.fromNode === node.id) outgoingByPort.add(w.fromPort)
+    }
+
+    if (cls === "instrument") {
+      const midiInputs = inputs.filter((p) => p.signal === "midi")
+      const anyMidiWired = midiInputs.some((p) => incomingByPort.has(p.id))
+      if (midiInputs.length > 0 && !anyMidiWired) {
+        issues.set(node.id, {
+          level: "warning",
+          message: "No MIDI input — instrument will be silent",
+        })
+        continue
+      }
+      const anyAudioWired = outputs
+        .filter((p) => p.signal === "audio")
+        .some((p) => outgoingByPort.has(p.id))
+      if (!anyAudioWired) {
+        issues.set(node.id, {
+          level: "warning",
+          message: "Audio output not connected anywhere",
+        })
+      }
+    }
+
+    if (cls === "sink") {
+      const audioInputs = inputs.filter((p) => p.signal === "audio")
+      const anyAudioWired = audioInputs.some((p) => incomingByPort.has(p.id))
+      if (audioInputs.length > 0 && !anyAudioWired) {
+        issues.set(node.id, {
+          level: "warning",
+          message: "Output has no audio source — show will be silent",
+        })
+      }
+    }
+
+    if (cls === "midi-processor" || cls === "audio-effect") {
+      const allIn = inputs.length > 0 && !inputs.some((p) => incomingByPort.has(p.id))
+      const allOut = outputs.length > 0 && !outputs.some((p) => outgoingByPort.has(p.id))
+      if (allIn && allOut) {
+        issues.set(node.id, { level: "warning", message: "Node is disconnected" })
+      }
+    }
+  }
+  return issues
 }
 
 // =============================================================================
@@ -320,71 +367,170 @@ function PatchEditorShell({
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
 }) {
   const [mode, setMode] = React.useState<AppMode>("program")
-  const [graph, setGraph] = React.useState<PatchGraph>(initialGraph)
-  const [selectedNodeId, setSelectedNodeId] = React.useState<string | undefined>()
+  const [graph, setGraphRaw] = React.useState<PatchGraph>(initialGraph)
+  const [history, setHistory] = React.useState<PatchGraph[]>([])
+  const [redoStack, setRedoStack] = React.useState<PatchGraph[]>([])
+
+  // Multi-select.
+  const [selectedNodeIds, setSelectedNodeIds] = React.useState<Set<string>>(new Set())
   const [selectedWireId, setSelectedWireId] = React.useState<string | undefined>()
   const [selectedCompositeId, setSelectedCompositeId] = React.useState<string | undefined>()
+
   const [selectedPatchId, setSelectedPatchId] = React.useState<string | undefined>(
     initialSelectedPatchId
   )
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null)
   const [bottomTabId, setBottomTabId] = React.useState<BottomTabId | null>(null)
 
-  const selectedNode = graph.nodes.find((n) => n.id === selectedNodeId)
+  const [soloed, setSoloed] = React.useState<Set<string>>(new Set())
+  const [muted, setMuted] = React.useState<Set<string>>(new Set())
+
+  // The "primary" selection (last clicked / single selected)
+  const primaryNodeId =
+    selectedNodeIds.size > 0 ? Array.from(selectedNodeIds)[selectedNodeIds.size - 1] : undefined
+  const selectedNode = primaryNodeId ? graph.nodes.find((n) => n.id === primaryNodeId) : undefined
   const selectedWire = graph.wires.find((w) => w.id === selectedWireId)
   const selectedComposite = graph.composites.find((c) => c.id === selectedCompositeId)
 
-  // Auto-open Settings tab when something gets selected.
+  // Auto-open Settings when something gets selected.
   React.useEffect(() => {
-    if (selectedNodeId || selectedWireId || selectedCompositeId) {
+    if (selectedNodeIds.size > 0 || selectedWireId || selectedCompositeId) {
       setBottomTabId("settings")
     }
-  }, [selectedNodeId, selectedWireId, selectedCompositeId])
+  }, [selectedNodeIds, selectedWireId, selectedCompositeId])
 
-  // Selecting a node clears wire/composite selection (and vice versa).
-  const selectNode = (id: string | undefined) => {
-    setSelectedNodeId(id)
-    if (id) {
-      setSelectedWireId(undefined)
-      setSelectedCompositeId(undefined)
+  // -----------------------------------------------------------------
+  // Undo / redo wrapper around setGraph
+  // -----------------------------------------------------------------
+
+  const setGraph = React.useCallback(
+    (updater: (g: PatchGraph) => PatchGraph) => {
+      setGraphRaw((g) => {
+        const next = updater(g)
+        if (next !== g) {
+          setHistory((h) => [...h, g].slice(-50))
+          setRedoStack([])
+        }
+        return next
+      })
+    },
+    []
+  )
+
+  const undo = () => {
+    setHistory((h) => {
+      if (h.length === 0) return h
+      const prev = h[h.length - 1]
+      setRedoStack((r) => [...r, graph])
+      setGraphRaw(prev)
+      return h.slice(0, -1)
+    })
+  }
+
+  const redo = () => {
+    setRedoStack((r) => {
+      if (r.length === 0) return r
+      const next = r[r.length - 1]
+      setHistory((h) => [...h, graph])
+      setGraphRaw(next)
+      return r.slice(0, -1)
+    })
+  }
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      if (e.key === "z" && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+        e.preventDefault()
+        redo()
+      }
     }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, history, redoStack])
+
+  // -----------------------------------------------------------------
+  // Selection
+  // -----------------------------------------------------------------
+
+  const selectNode = (id: string | undefined, additive = false) => {
+    if (!id) {
+      setSelectedNodeIds(new Set())
+      return
+    }
+    setSelectedWireId(undefined)
+    setSelectedCompositeId(undefined)
+    setSelectedNodeIds((prev) => {
+      if (additive) {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      }
+      return new Set([id])
+    })
   }
   const selectWire = (id: string | undefined) => {
     setSelectedWireId(id)
     if (id) {
-      setSelectedNodeId(undefined)
+      setSelectedNodeIds(new Set())
       setSelectedCompositeId(undefined)
     }
   }
   const selectComposite = (id: string | undefined) => {
     setSelectedCompositeId(id)
     if (id) {
-      setSelectedNodeId(undefined)
+      setSelectedNodeIds(new Set())
       setSelectedWireId(undefined)
     }
   }
   const deselectAll = () => {
-    setSelectedNodeId(undefined)
+    setSelectedNodeIds(new Set())
     setSelectedWireId(undefined)
     setSelectedCompositeId(undefined)
+  }
+
+  // Plumb shift-click detection: PatchCanvas onSelect only knows the id, we
+  // need to track the shift modifier ourselves via a window keydown flag.
+  const shiftDownRef = React.useRef(false)
+  React.useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === "Shift") shiftDownRef.current = true }
+    const up = (e: KeyboardEvent) => { if (e.key === "Shift") shiftDownRef.current = false }
+    window.addEventListener("keydown", down)
+    window.addEventListener("keyup", up)
+    return () => {
+      window.removeEventListener("keydown", down)
+      window.removeEventListener("keyup", up)
+    }
+  }, [])
+
+  const onCanvasSelectNode = (id: string | undefined) => {
+    selectNode(id, shiftDownRef.current)
   }
 
   // -----------------------------------------------------------------
   // Mutations
   // -----------------------------------------------------------------
 
-  const addNode = (kind: NodeKind) => {
-    const x = 80 + ((graph.nodes.length * 32) % 240)
-    const y = 100 + ((graph.nodes.length * 56) % 300)
-    const node = makeNode(kind, { x, y })
+  const addNodeAt = (kind: NodeKind, pos: { x: number; y: number }) => {
+    const node = makeNode(kind, pos)
     setGraph((g) => ({ ...g, nodes: [...g.nodes, node] }))
     selectNode(node.id)
   }
+  const addNode = (kind: NodeKind) => addNodeAt(kind, { x: 120, y: 160 })
 
-  const moveNode = (id: string, x: number, y: number) => {
+  const moveNodes = (deltas: Array<{ id: string; x: number; y: number }>) => {
     setGraph((g) => ({
       ...g,
-      nodes: g.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
+      nodes: g.nodes.map((n) => {
+        const d = deltas.find((x) => x.id === n.id)
+        return d ? { ...n, x: d.x, y: d.y } : n
+      }),
     }))
   }
 
@@ -397,7 +543,11 @@ function PatchEditorShell({
         .map((c) => ({ ...c, contains: c.contains.filter((c2) => c2 !== id) }))
         .filter((c) => c.contains.length > 0),
     }))
-    if (selectedNodeId === id) selectNode(undefined)
+    selectedNodeIds.has(id) && selectNode(undefined)
+  }
+
+  const deleteSelectedNodes = () => {
+    for (const id of selectedNodeIds) deleteNode(id)
   }
 
   const deleteWire = (id: string) => {
@@ -412,12 +562,7 @@ function PatchEditorShell({
     }))
   }
 
-  const createWire = (p: {
-    fromNode: string
-    fromPort: string
-    toNode: string
-    toPort: string
-  }) => {
+  const createWire = (p: { fromNode: string; fromPort: string; toNode: string; toPort: string }) => {
     const dup = graph.wires.find(
       (w) =>
         w.fromNode === p.fromNode &&
@@ -467,21 +612,61 @@ function PatchEditorShell({
     }))
   }
 
+  const toggleSolo = (id: string) => {
+    setSoloed((s) => {
+      const next = new Set(s)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const toggleMute = (id: string) => {
+    setMuted((m) => {
+      const next = new Set(m)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // Delete key — delete selected
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return
+      if ((e.target as HTMLElement)?.matches("input, textarea")) return
+      e.preventDefault()
+      if (selectedNodeIds.size > 0) deleteSelectedNodes()
+      else if (selectedWireId) deleteWire(selectedWireId)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNodeIds, selectedWireId])
+
+  // -----------------------------------------------------------------
+  // Validation
+  // -----------------------------------------------------------------
+
+  const validation = React.useMemo(() => validatePatch(graph), [graph])
+  const warningCount = Array.from(validation.values()).filter((v) => v.level === "warning").length
+  const errorCount = Array.from(validation.values()).filter((v) => v.level === "error").length
+
   // -----------------------------------------------------------------
   // Context menus
   // -----------------------------------------------------------------
 
-  const openCanvasMenu = (anchor: { x: number; y: number }) => {
+  const openCanvasMenu = (
+    anchor: { x: number; y: number },
+    canvasPos: { x: number; y: number }
+  ) => {
     setContextMenu({
       anchor,
       sections: [
         {
           id: "quick-add",
           items: [
-            { id: "add-keyboard", label: "Add keyboard", icon: Music, onSelect: () => addNode("source.keyboard") },
-            { id: "add-sine", label: "Add sine synth", icon: Waves, onSelect: () => addNode("instrument.sine") },
-            { id: "add-eq", label: "Add EQ", icon: Settings2, onSelect: () => addNode("audio.eq") },
-            { id: "add-out", label: "Add output", icon: Volume2, onSelect: () => addNode("sink.main-out") },
+            { id: "add-keyboard", label: "Add keyboard here", icon: Music, onSelect: () => addNodeAt("source.keyboard", canvasPos) },
+            { id: "add-sine", label: "Add sine synth here", icon: Waves, onSelect: () => addNodeAt("instrument.sine", canvasPos) },
+            { id: "add-eq", label: "Add EQ here", icon: Settings2, onSelect: () => addNodeAt("audio.eq", canvasPos) },
+            { id: "add-out", label: "Add output here", icon: Volume2, onSelect: () => addNodeAt("sink.main-out", canvasPos) },
           ],
         },
       ],
@@ -561,13 +746,17 @@ function PatchEditorShell({
   }
 
   // -----------------------------------------------------------------
-  // Bottom tab content (Settings / Mix / Preview)
+  // Bottom tabs
   // -----------------------------------------------------------------
 
   const settingsBreadcrumb: BreadcrumbItem[] = (() => {
     const items: BreadcrumbItem[] = [{ id: "patch", label: patchName, onClick: deselectAll }]
     if (selectedComposite) items.push({ id: "comp", label: selectedComposite.name })
-    if (selectedNode) items.push({ id: "node", label: selectedNode.name })
+    if (selectedNodeIds.size > 1) {
+      items.push({ id: "multi", label: `${selectedNodeIds.size} nodes` })
+    } else if (selectedNode) {
+      items.push({ id: "node", label: selectedNode.name })
+    }
     if (selectedWire) items.push({ id: "wire", label: "Wire" })
     return items
   })()
@@ -575,13 +764,21 @@ function PatchEditorShell({
   const bottomTabs: PatchTabSpec[] = [
     {
       id: "settings",
-      label: "Settings",
+      label: warningCount + errorCount > 0
+        ? `Settings (${warningCount + errorCount} ⚠)`
+        : "Settings",
       content: (
         <SettingsTab
           breadcrumb={settingsBreadcrumb}
           selectedNode={selectedNode}
+          selectedNodesCount={selectedNodeIds.size}
           selectedWire={selectedWire}
           selectedComposite={selectedComposite}
+          warningCount={warningCount}
+          errorCount={errorCount}
+          validation={validation}
+          graph={graph}
+          onJumpToNode={(id) => selectNode(id)}
           onSetWireColor={(c) => selectedWire && setWireColor(selectedWire.id, c)}
           onDeleteWire={() => selectedWire && deleteWire(selectedWire.id)}
           onDeleteNode={() => selectedNode && deleteNode(selectedNode.id)}
@@ -589,22 +786,8 @@ function PatchEditorShell({
         />
       ),
     },
-    {
-      id: "mix",
-      label: "Mix",
-      content: <MixTab nodes={graph.nodes} />,
-    },
-    {
-      id: "preview",
-      label: "Preview",
-      content: (
-        <LivePreview
-          graph={graph}
-          patchName={patchName}
-          onResizeZone={resizeZone}
-        />
-      ),
-    },
+    { id: "mix", label: "Mix", content: <MixTab nodes={graph.nodes} soloed={soloed} muted={muted} onToggleSolo={toggleSolo} onToggleMute={toggleMute} /> },
+    { id: "preview", label: "Preview", content: <LivePreview graph={graph} patchName={patchName} onResizeZone={resizeZone} /> },
   ]
 
   // -----------------------------------------------------------------
@@ -637,27 +820,68 @@ function PatchEditorShell({
         }
         canvas={
           <div className="flex h-full flex-col gap-2 p-2">
-            {/* Canvas island */}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
-              <PatchTitleBar songName={songName} patchName={patchName} />
+              <PatchTitleBar
+                songName={songName}
+                patchName={patchName}
+                meta={
+                  warningCount + errorCount > 0
+                    ? `${warningCount + errorCount} validation ${warningCount + errorCount === 1 ? "issue" : "issues"}`
+                    : undefined
+                }
+              />
+              <div className="flex items-center gap-1 border-b bg-card/40 px-2 py-1">
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={history.length === 0}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-30"
+                >
+                  <Undo2 className="size-3" /> Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={redo}
+                  disabled={redoStack.length === 0}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-30"
+                >
+                  <Redo2 className="size-3" /> Redo
+                </button>
+                <div className="mx-1 h-3 w-px bg-border" />
+                <span className="text-[10px] text-muted-foreground">
+                  Shift-click for multi-select · Drag library cards onto canvas · Right-click to add at point
+                </span>
+                {warningCount + errorCount > 0 && (
+                  <span className="ml-auto flex items-center gap-1 text-[10px] text-amber-500">
+                    <AlertTriangle className="size-3" />
+                    {warningCount + errorCount} validation {warningCount + errorCount === 1 ? "issue" : "issues"}
+                  </span>
+                )}
+              </div>
               <div className="min-h-0 flex-1">
                 <PatchCanvas
                   graph={graph}
-                  selectedNodeId={selectedNodeId}
+                  selectedNodeIds={selectedNodeIds}
                   selectedWireId={selectedWireId}
-                  onSelectNode={selectNode}
+                  selectedCompositeId={selectedCompositeId}
+                  onSelectNode={onCanvasSelectNode}
                   onSelectWire={selectWire}
-                  onMoveNode={moveNode}
+                  onMoveNodes={moveNodes}
                   onCreateWire={createWire}
                   onDeleteWiresInto={deleteWiresInto}
                   onOpenCanvasMenu={openCanvasMenu}
                   onOpenNodeMenu={openNodeMenu}
                   onOpenWireMenu={openWireMenu}
                   onOpenCompositeMenu={openCompositeMenu}
+                  onDropFromLibrary={addNodeAt}
+                  validation={validation}
+                  soloed={soloed}
+                  muted={muted}
+                  onToggleSolo={toggleSolo}
+                  onToggleMute={toggleMute}
                 />
               </div>
             </div>
-            {/* Bottom tab rail (own island) */}
             <div className="overflow-hidden rounded-xl border bg-card">
               <PatchTabRail
                 tabs={bottomTabs}
@@ -699,9 +923,7 @@ function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
         const isLast = i === items.length - 1
         return (
           <React.Fragment key={item.id}>
-            {i > 0 && (
-              <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" />
-            )}
+            {i > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" />}
             <button
               type="button"
               onClick={item.onClick}
@@ -724,14 +946,20 @@ function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
 }
 
 // =============================================================================
-// Settings tab — context-aware
+// Settings tab
 // =============================================================================
 
 function SettingsTab({
   breadcrumb,
   selectedNode,
+  selectedNodesCount,
   selectedWire,
   selectedComposite,
+  warningCount,
+  errorCount,
+  validation,
+  graph,
+  onJumpToNode,
   onSetWireColor,
   onDeleteWire,
   onDeleteNode,
@@ -739,8 +967,14 @@ function SettingsTab({
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
+  selectedNodesCount: number
   selectedWire?: Wire
   selectedComposite?: { id: string; name: string; locked: boolean }
+  warningCount: number
+  errorCount: number
+  validation: Map<string, { level: string; message: string }>
+  graph: PatchGraph
+  onJumpToNode: (id: string) => void
   onSetWireColor: (c: string | undefined) => void
   onDeleteWire: () => void
   onDeleteNode: () => void
@@ -752,47 +986,133 @@ function SettingsTab({
         <Breadcrumb items={breadcrumb} />
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {selectedWire ? (
+        {selectedNodesCount > 1 ? (
+          <MultiSelectInfo count={selectedNodesCount} />
+        ) : selectedWire ? (
           <WireSettings wire={selectedWire} onSetColor={onSetWireColor} onDelete={onDeleteWire} />
         ) : selectedNode ? (
           <NodeSettings node={selectedNode} onDelete={onDeleteNode} />
         ) : selectedComposite ? (
           <CompositeSettings composite={selectedComposite} onToggleLock={onToggleCompositeLock} />
         ) : (
-          <GlobalSettings />
+          <GlobalSettings
+            warningCount={warningCount}
+            errorCount={errorCount}
+            validation={validation}
+            graph={graph}
+            onJumpToNode={onJumpToNode}
+          />
         )}
       </div>
     </div>
   )
 }
 
-function GlobalSettings() {
+function MultiSelectInfo({ count }: { count: number }) {
   return (
     <div className="grid h-full place-items-center text-center text-xs text-muted-foreground">
-      <div className="max-w-md">
-        <Settings className="mx-auto mb-2 size-6 opacity-40" />
-        <div className="text-foreground">Global patch settings</div>
+      <div>
+        <div className="text-foreground font-semibold">{count} nodes selected</div>
         <div className="mt-1">
-          Patch-level transition, master level, post-mix FX, and routing
-          defaults will land here. Select a node, wire, or composite block to
-          see its context-specific settings.
+          Drag any to move all · Delete to remove all · Wrap as composite (soon)
         </div>
       </div>
     </div>
   )
 }
 
-function NodeSettings({
-  node,
-  onDelete,
+function GlobalSettings({
+  warningCount,
+  errorCount,
+  validation,
+  graph,
+  onJumpToNode,
 }: {
-  node: GraphNode
-  onDelete: () => void
+  warningCount: number
+  errorCount: number
+  validation: Map<string, { level: string; message: string }>
+  graph: PatchGraph
+  onJumpToNode: (id: string) => void
 }) {
+  const issues = Array.from(validation.entries())
+    .map(([nodeId, issue]) => {
+      const node = graph.nodes.find((n) => n.id === nodeId)
+      return node ? { node, issue } : null
+    })
+    .filter((x): x is { node: GraphNode; issue: { level: string; message: string } } => !!x)
+
+  return (
+    <div className="grid h-full grid-cols-[1fr_1fr] gap-4 text-xs">
+      <div className="flex flex-col gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Patch settings
+        </div>
+        <div className="rounded-md border bg-background p-3 text-muted-foreground">
+          Transition defaults, master level, post-mix FX, and per-patch
+          routing settings land here. Currently a placeholder.
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Validation
+          </div>
+          <span
+            className={cn(
+              "text-[10px] font-mono",
+              errorCount > 0
+                ? "text-destructive"
+                : warningCount > 0
+                  ? "text-amber-500"
+                  : "text-emerald-500"
+            )}
+          >
+            {errorCount + warningCount === 0 ? "All clear ✓" : `${warningCount} warn · ${errorCount} err`}
+          </span>
+        </div>
+        {issues.length === 0 ? (
+          <div className="grid h-full place-items-center rounded-md border bg-emerald-500/[0.04] text-[11px] text-emerald-500">
+            No validation issues.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {issues.map(({ node, issue }) => (
+              <button
+                key={node.id}
+                type="button"
+                onClick={() => onJumpToNode(node.id)}
+                className={cn(
+                  "flex items-start gap-2 rounded-md border px-2 py-1.5 text-left hover:bg-muted/40",
+                  issue.level === "warning"
+                    ? "border-amber-500/40 bg-amber-500/[0.06]"
+                    : "border-destructive/40 bg-destructive/[0.06]"
+                )}
+              >
+                <AlertTriangle
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    issue.level === "warning" ? "text-amber-500" : "text-destructive"
+                  )}
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold">{node.name}</div>
+                  <div className="truncate text-[10px] text-muted-foreground">
+                    {issue.message}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function NodeSettings({ node, onDelete }: { node: GraphNode; onDelete: () => void }) {
   const isPlugin = node.kind === "instrument.plugin"
   return (
     <div className="grid h-full grid-cols-[280px_1fr] gap-4 text-xs">
-      {/* Left: identity + ports */}
       <div className="flex flex-col gap-3 border-r pr-4">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -844,8 +1164,6 @@ function NodeSettings({
           Delete node
         </button>
       </div>
-
-      {/* Right: plugin UI dock or kind-specific config */}
       <div className="min-w-0">
         {isPlugin ? <PluginUIDock node={node} /> : <KindConfig node={node} />}
       </div>
@@ -867,8 +1185,7 @@ function PluginUIDock({ node }: { node: GraphNode }) {
             {uri ?? "(no plugin loaded)"} UI docks here
           </div>
           <div className="mt-1">
-            CLAP / VST3 plugin GUIs embed in this region at native size.
-            Float-out option available from the tab rail header.
+            CLAP / VST3 plugin GUIs embed here at native size.
           </div>
         </div>
       </div>
@@ -884,8 +1201,8 @@ function KindConfig({ node }: { node: GraphNode }) {
       </div>
       <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
         <div className="max-w-md p-6 text-center">
-          Kind-specific controls for {node.kind} land here in the next
-          iteration. The in-node body covers quick edits today.
+          Kind-specific controls for {node.kind} land here. The in-node body
+          covers quick edits today.
         </div>
       </div>
     </div>
@@ -915,7 +1232,6 @@ function WireSettings({
               "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs hover:bg-muted/40",
               !wire.color && "border-primary/40 bg-primary/5"
             )}
-            title="Use the signal's default color"
           >
             <RotateCcw className="size-3" />
             Default
@@ -979,10 +1295,22 @@ function CompositeSettings({
 }
 
 // =============================================================================
-// Mix tab — strips per audio-producing node
+// Mix tab — centered labels, no clipping
 // =============================================================================
 
-function MixTab({ nodes }: { nodes: GraphNode[] }) {
+function MixTab({
+  nodes,
+  soloed,
+  muted,
+  onToggleSolo,
+  onToggleMute,
+}: {
+  nodes: GraphNode[]
+  soloed: Set<string>
+  muted: Set<string>
+  onToggleSolo: (id: string) => void
+  onToggleMute: (id: string) => void
+}) {
   const instruments = nodes.filter((n) => classOf(n.kind) === "instrument")
   const groups = nodes.filter((n) => n.kind === "audio.mix")
   const masters = nodes.filter((n) => n.kind === "sink.main-out")
@@ -996,8 +1324,18 @@ function MixTab({ nodes }: { nodes: GraphNode[] }) {
   }
 
   return (
-    <div className="flex h-full items-stretch gap-6 text-xs">
-      {instruments.length > 0 && <StripGroup title="Instruments" nodes={instruments} />}
+    <div className="flex h-full items-stretch gap-6 px-2 py-1 text-xs">
+      {instruments.length > 0 && (
+        <StripGroup
+          title="Instruments"
+          nodes={instruments}
+          soloable
+          soloed={soloed}
+          muted={muted}
+          onToggleSolo={onToggleSolo}
+          onToggleMute={onToggleMute}
+        />
+      )}
       {groups.length > 0 && <StripGroup title="Groups" nodes={groups} />}
       {masters.length > 0 && <StripGroup title="Master" nodes={masters} master />}
     </div>
@@ -1008,45 +1346,109 @@ function StripGroup({
   title,
   nodes,
   master,
+  soloable,
+  soloed,
+  muted,
+  onToggleSolo,
+  onToggleMute,
 }: {
   title: string
   nodes: GraphNode[]
   master?: boolean
+  soloable?: boolean
+  soloed?: Set<string>
+  muted?: Set<string>
+  onToggleSolo?: (id: string) => void
+  onToggleMute?: (id: string) => void
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="text-center text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </div>
-      <div className="flex flex-1 items-end gap-2">
+      <div className="flex flex-1 items-stretch gap-2">
         {nodes.map((n) => (
-          <ChannelStrip key={n.id} node={n} master={master} />
+          <ChannelStrip
+            key={n.id}
+            node={n}
+            master={master}
+            soloable={soloable}
+            solo={soloed?.has(n.id)}
+            muted={muted?.has(n.id)}
+            onToggleSolo={onToggleSolo ? () => onToggleSolo(n.id) : undefined}
+            onToggleMute={onToggleMute ? () => onToggleMute(n.id) : undefined}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function ChannelStrip({ node, master }: { node: GraphNode; master?: boolean }) {
+function ChannelStrip({
+  node,
+  master,
+  soloable,
+  solo,
+  muted,
+  onToggleSolo,
+  onToggleMute,
+}: {
+  node: GraphNode
+  master?: boolean
+  soloable?: boolean
+  solo?: boolean
+  muted?: boolean
+  onToggleSolo?: () => void
+  onToggleMute?: () => void
+}) {
   const cls = CLASS_COLORS[classOf(node.kind)]
   return (
     <div
-      className="flex h-full w-16 flex-col items-center gap-1.5 rounded-md border bg-background px-2 py-2"
+      className={cn(
+        "flex w-16 flex-col items-center gap-2 rounded-md border bg-background px-2 py-2",
+        muted && "opacity-50"
+      )}
       style={{
         borderTopColor: `oklch(0.7 0.18 ${cls.hue})`,
         borderTopWidth: master ? 4 : 2,
       }}
     >
-      <span className="line-clamp-2 text-center text-[9px] font-medium leading-tight">
+      <span className="line-clamp-2 w-full text-center text-[10px] font-semibold leading-tight">
         {node.name}
       </span>
-      <div className="relative my-2 h-full min-h-[80px] w-3 rounded-full bg-muted/40">
+      {soloable && (
+        <div className="flex gap-0.5">
+          <button
+            type="button"
+            onClick={onToggleSolo}
+            className={cn(
+              "grid size-5 place-items-center rounded text-[9px] font-bold",
+              solo ? "bg-yellow-400 text-black" : "bg-muted/40 text-muted-foreground hover:text-foreground"
+            )}
+            title="Solo"
+          >
+            S
+          </button>
+          <button
+            type="button"
+            onClick={onToggleMute}
+            className={cn(
+              "grid size-5 place-items-center rounded text-[9px] font-bold",
+              muted ? "bg-red-500 text-white" : "bg-muted/40 text-muted-foreground hover:text-foreground"
+            )}
+            title="Mute"
+          >
+            M
+          </button>
+        </div>
+      )}
+      <div className="relative my-1 flex w-3 flex-1 items-center rounded-full bg-muted/40" style={{ minHeight: 100 }}>
         <div
           className="absolute left-1/2 size-3.5 -translate-x-1/2 rounded-sm bg-foreground/40"
           style={{ top: "30%" }}
         />
       </div>
-      <span className="font-mono text-[9px] text-muted-foreground">
+      <span className="w-full text-center font-mono text-[9px] text-muted-foreground">
         {master ? "0.0" : "−6.0"}
       </span>
     </div>
