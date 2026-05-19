@@ -122,14 +122,25 @@ function KeyboardPreview({
       ]
     }
     return zonePorts.map((p) => {
-      const cfg = p.config as { kind: "zone"; fromNote: number; toNote: number }
+      const cfg = p.config as {
+        kind: "zone"
+        fromNote: number
+        toNote: number
+        colorHue?: number
+      }
       const r = findDownstreamTarget(graph, keyboard.id, p.id)
+      // Zone's own colour wins over the downstream target's. The user
+      // picked it on purpose; we respect it.
+      const color =
+        typeof cfg.colorHue === "number"
+          ? `oklch(0.7 0.18 ${cfg.colorHue})`
+          : zoneColor(r)
       return {
         id: p.id,
         label: r?.displayName ?? p.label,
         fromNote: cfg.fromNote,
         toNote: cfg.toNote,
-        color: zoneColor(r),
+        color,
       }
     })
   }, [graph, keyboard])

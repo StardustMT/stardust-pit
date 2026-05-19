@@ -87,6 +87,8 @@ export interface PatchCanvasProps {
     compositeId: string,
     anchor: { x: number; y: number }
   ) => void
+  /** Single-click on composite title chip — opens settings panel for it. */
+  onSelectComposite?: (compositeId: string) => void
   /** Library drag-to-place handler. Receives the dropped kind + canvas pos. */
   onDropFromLibrary?: (kind: NodeKind, canvasPos: { x: number; y: number }) => void
   /** Per-node validation status badges. */
@@ -123,6 +125,7 @@ export function PatchCanvas({
   onOpenNodeMenu,
   onOpenWireMenu,
   onOpenCompositeMenu,
+  onSelectComposite,
   onDropFromLibrary,
   validation,
   soloed,
@@ -353,6 +356,25 @@ export function PatchCanvas({
     onNodeDragStart?.()
     setNodeDrag({ primaryNodeId: nodeId, offsets })
   }
+
+  /** Drag the composite frame — moves every member node by the same delta. */
+  const onCompositeLabelPointerDown =
+    (compositeId: string) => (e: React.PointerEvent) => {
+      const comp = compositeMap.get(compositeId)
+      if (!comp) return
+      setSmoothPan(false)
+      const cs = toCanvasSpace(e)
+      const offsets = new Map<string, { offsetX: number; offsetY: number }>()
+      for (const n of comp.members) {
+        offsets.set(n.id, { offsetX: cs.x - n.x, offsetY: cs.y - n.y })
+      }
+      // Use the first member as the "primary" so existing nodeDrag drains
+      // the same way. Composite is just a multi-node drag in disguise.
+      const primary = comp.members[0]
+      if (!primary) return
+      onNodeDragStart?.()
+      setNodeDrag({ primaryNodeId: primary.id, offsets })
+    }
 
   // -------------------------------------------------------------------------
   // Drag-to-connect (outputs only)
@@ -609,6 +631,8 @@ export function PatchCanvas({
                 nodes={memberNodes}
                 connectedPorts={connectedMap}
                 highlightedPorts={highlightedByNode.get(c.id)}
+                onSelect={onSelectComposite ? () => onSelectComposite(c.id) : undefined}
+                onLabelPointerDown={onCompositeLabelPointerDown(c.id)}
                 onOpenMenu={
                   onOpenCompositeMenu
                     ? (anchor) => onOpenCompositeMenu(c.id, anchor)

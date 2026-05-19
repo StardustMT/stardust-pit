@@ -223,7 +223,7 @@ export function PatchNode({
               )}
               style={{ height: PORT_ROW_HEIGHT }}
             >
-              {portDisplayLabel(p)}
+              {p.label}
             </span>
           ))}
         </div>
@@ -236,19 +236,30 @@ export function PatchNode({
         {/* Output port labels (right column) */}
         <div className="flex flex-col items-end justify-start gap-0">
           {outputs.map((p, i) => {
-            const isZone = p.config?.kind === "zone"
+            const subtitle = portSubtitle(p, outputs.length)
+            const zoneHue =
+              p.config?.kind === "zone" ? p.config.colorHue : undefined
+            const subtitleColor =
+              typeof zoneHue === "number" ? `oklch(0.75 0.18 ${zoneHue})` : undefined
             return (
-              <span
+              <div
                 key={p.id}
                 className={cn(
-                  "flex items-center text-[10px] leading-none text-muted-foreground",
-                  isZone && "font-mono",
+                  "flex flex-col items-end justify-center text-[10px] leading-tight text-muted-foreground",
                   highlighted?.[p.id] && "text-foreground font-medium"
                 )}
                 style={{ height: PORT_ROW_HEIGHT }}
               >
-                {portDisplayLabel(p)}
-              </span>
+                <span>{p.label}</span>
+                {subtitle && (
+                  <span
+                    className="font-mono text-[9px] opacity-90"
+                    style={{ color: subtitleColor }}
+                  >
+                    {subtitle}
+                  </span>
+                )}
+              </div>
             )
           })}
         </div>
@@ -365,7 +376,10 @@ function PortCircle({
   onPointerLeave: () => void
   onPointerUp: () => void
 }) {
-  const color = SIGNAL_DEFAULT_COLORS[port.signal]
+  const color =
+    port.config?.kind === "zone" && typeof port.config.colorHue === "number"
+      ? `oklch(0.7 0.18 ${port.config.colorHue})`
+      : SIGNAL_DEFAULT_COLORS[port.signal]
   const cursor = promoted
     ? "cursor-not-allowed"
     : side === "right"
@@ -476,15 +490,18 @@ export function nodeBounds(node: GraphNode): {
 }
 
 /**
- * What label to render next to a port. For zone outputs, show the live
- * note range (e.g. "C2–B3") so the keyboard's per-zone routing reads at
- * a glance. For everything else, use the user-set port label.
+ * Optional second line under a port label. For zone outputs, returns the
+ * note range (e.g. "C2–B3"). Hidden when the keyboard has a single zone
+ * that covers the full playable range — in that case the range is
+ * implicit and showing it just clutters the node.
  */
-function portDisplayLabel(p: Port): string {
+function portSubtitle(p: Port, totalSiblings: number): string | undefined {
   if (p.config?.kind === "zone") {
+    const fullKeyboard = p.config.fromNote <= 21 && p.config.toNote >= 108
+    if (totalSiblings === 1 && fullKeyboard) return undefined
     return `${noteName(p.config.fromNote)}–${noteName(p.config.toNote)}`
   }
-  return p.label
+  return undefined
 }
 
 function noteName(midi: number): string {
@@ -496,7 +513,7 @@ function minBodyHeightForKind(kind: GraphNode["kind"]): number {
   switch (kind) {
     case "source.keyboard":
     case "source.pads":
-      return 60
+      return 40
     case "instrument.plugin":
     case "instrument.sine":
       return 72

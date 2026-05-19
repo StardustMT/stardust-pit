@@ -37,7 +37,19 @@ export interface Port {
 }
 
 export type PortConfig =
-  | { kind: "zone"; fromNote: number; toNote: number }
+  | {
+      kind: "zone"
+      fromNote: number
+      toNote: number
+      /** Optional accent hue (oklch). Used to tint the zone in the live
+       *  preview keyboard, the port subtitle, and (when wireFollowsColor)
+       *  wires drawn from this zone. */
+      colorHue?: number
+      /** When true, new wires drawn from this zone start out the zone's
+       *  colour. Users who want zone-vs-wire colours to differ can flip
+       *  this off and pick a wire colour independently. Default: true. */
+      wireFollowsColor?: boolean
+    }
   | { kind: "pad"; padIndex: number; note?: number }
   | { kind: "channel"; midiChannel: number }
   | { kind: "stereo"; channel: "L" | "R" }

@@ -322,6 +322,19 @@ function nextZoneRange(
   return { fromNote: start, toNote: end }
 }
 
+/** Default palette for zones — distinct, perceptually spread hues. */
+const ZONE_HUES = [200, 30, 145, 290, 60, 0, 250, 95]
+
+function pickNextZoneHue(used: Set<number>): number {
+  for (const h of ZONE_HUES) if (!used.has(h)) return h
+  // Saturated — pick the first one (caller is past the palette size).
+  return ZONE_HUES[0]
+}
+
+function hueToColor(hue: number): string {
+  return `oklch(0.7 0.18 ${hue})`
+}
+
 // =============================================================================
 // Wire color palette
 // =============================================================================
@@ -360,6 +373,27 @@ interface ValidationIssue {
 
 function validatePatch(graph: PatchGraph): Map<string, ValidationIssue> {
   const issues = new Map<string, ValidationIssue>()
+
+  // Pre-compute which (internalNode, internalPort) pairs are reached by a
+  // wire that targets a composite's promoted port. A wire into the
+  // composite's "Keys" input is semantically a wire into the contained
+  // organ's MIDI in — validation has to honour that alias or it'll flag
+  // properly-wired blocks as silent.
+  const aliasedIncoming = new Set<string>() // key: `${nodeId}:${portId}`
+  const aliasedOutgoing = new Set<string>()
+  for (const w of graph.wires) {
+    const toComp = graph.composites.find((c) => c.id === w.toNode)
+    if (toComp) {
+      const p = toComp.promotedPorts.find((pp) => pp.id === w.toPort)
+      if (p) aliasedIncoming.add(`${p.internalNode}:${p.internalPort}`)
+    }
+    const fromComp = graph.composites.find((c) => c.id === w.fromNode)
+    if (fromComp) {
+      const p = fromComp.promotedPorts.find((pp) => pp.id === w.fromPort)
+      if (p) aliasedOutgoing.add(`${p.internalNode}:${p.internalPort}`)
+    }
+  }
+
   for (const node of graph.nodes) {
     const cls = classOf(node.kind)
     const inputs = node.ports.filter((p) => p.direction === "in")
@@ -369,6 +403,16 @@ function validatePatch(graph: PatchGraph): Map<string, ValidationIssue> {
     for (const w of graph.wires) {
       if (w.toNode === node.id) incomingByPort.add(w.toPort)
       if (w.fromNode === node.id) outgoingByPort.add(w.fromPort)
+    }
+    // Merge in alias hits so "wired via composite" counts as wired.
+    for (const p of node.ports) {
+      const key = `${node.id}:${p.id}`
+      if (p.direction === "in" && aliasedIncoming.has(key)) {
+        incomingByPort.add(p.id)
+      }
+      if (p.direction === "out" && aliasedOutgoing.has(key)) {
+        outgoingByPort.add(p.id)
+      }
     }
 
     if (cls === "instrument") {
@@ -663,8 +707,19 @@ function PatchEditorShell({
         w.toPort === p.toPort
     )
     if (dup) return
+    // Inherit zone colour at creation time when the source is a zone port
+    // with wireFollowsColor on (the default).
+    const sourceNode = graph.nodes.find((n) => n.id === p.fromNode)
+    const sourcePort = sourceNode?.ports.find((pp) => pp.id === p.fromPort)
+    let color: string | undefined
+    if (sourcePort?.config?.kind === "zone") {
+      const cfg = sourcePort.config
+      if (cfg.wireFollowsColor !== false && typeof cfg.colorHue === "number") {
+        color = hueToColor(cfg.colorHue)
+      }
+    }
     const id = `w-${Date.now()}`
-    setGraph((g) => ({ ...g, wires: [...g.wires, { id, ...p }] }))
+    setGraph((g) => ({ ...g, wires: [...g.wires, { id, ...p, color }] }))
   }
 
   const setWireColor = (wireId: string, color: string | undefined) => {
@@ -766,6 +821,10 @@ function PatchEditorShell({
    * a new zone to one that already has zones. Existing wires from the
    * pre-zoned single out get re-routed to the new top zone so the existing
    * sound stays connected by default.
+   *
+   * New zones cycle through the ZONE_HUES palette so adjacent zones never
+   * default to the same colour. Wires drawn from a zone (or already
+   * attached to it) inherit the zone hue when wireFollowsColor is set.
    */
   const addZone = (nodeId: string) => {
     setGraph((g) => {
@@ -774,32 +833,53 @@ function PatchEditorShell({
       const existingZones = node.ports.filter(
         (p) => p.direction === "out" && p.config?.kind === "zone"
       )
+      const usedHues = new Set(
+        existingZones
+          .map((p) => (p.config as { colorHue?: number }).colorHue)
+          .filter((h): h is number => typeof h === "number")
+      )
+      const nextHue = pickNextZoneHue(usedHues)
       const newId = `zone-${Date.now()}`
-      // Pick a sensible default range based on what's already there.
       const range = nextZoneRange(existingZones)
       const newPort = {
         id: newId,
-        label: "Zone",
+        label: "MIDI out",
         signal: "midi" as const,
         direction: "out" as const,
-        config: { kind: "zone" as const, fromNote: range.fromNote, toNote: range.toNote },
+        config: {
+          kind: "zone" as const,
+          fromNote: range.fromNote,
+          toNote: range.toNote,
+          colorHue: nextHue,
+          wireFollowsColor: true,
+        },
       }
-      // If this is the FIRST zone, also need to seed a second zone from
-      // the implicit "full" range so the user has something to split — and
-      // migrate any wires off the single "out" onto the first zone.
+      // If this is the FIRST zone added, seed a complementary first zone
+      // and migrate any existing wires off the single "out" onto the top.
       if (existingZones.length === 0) {
         const singleOut = node.ports.find((p) => p.direction === "out")
         if (!singleOut) return g
+        const firstHue = pickNextZoneHue(new Set([nextHue]))
         const lowZone = {
           id: `zone-low-${Date.now()}`,
-          label: "Zone",
+          label: "MIDI out",
           signal: "midi" as const,
           direction: "out" as const,
-          config: { kind: "zone" as const, fromNote: 36, toNote: 59 },
+          config: {
+            kind: "zone" as const,
+            fromNote: 36,
+            toNote: 59,
+            colorHue: firstHue,
+            wireFollowsColor: true,
+          },
         }
         const highZone = {
           ...newPort,
-          config: { kind: "zone" as const, fromNote: 60, toNote: 108 },
+          config: {
+            ...newPort.config,
+            fromNote: 60,
+            toNote: 108,
+          },
         }
         return {
           ...g,
@@ -808,7 +888,7 @@ function PatchEditorShell({
           ),
           wires: g.wires.map((w) =>
             w.fromNode === nodeId && w.fromPort === singleOut.id
-              ? { ...w, fromPort: highZone.id }
+              ? { ...w, fromPort: highZone.id, color: hueToColor(nextHue) }
               : w
           ),
         }
@@ -818,6 +898,80 @@ function PatchEditorShell({
         nodes: g.nodes.map((n) =>
           n.id !== nodeId ? n : { ...n, ports: [...n.ports, newPort] }
         ),
+      }
+    })
+  }
+
+  const setZoneColor = (
+    nodeId: string,
+    portId: string,
+    hue: number | undefined
+  ) => {
+    setGraph((g) => {
+      const node = g.nodes.find((n) => n.id === nodeId)
+      const port = node?.ports.find((p) => p.id === portId)
+      const cfg = port?.config?.kind === "zone" ? port.config : null
+      const wireFollows = cfg?.wireFollowsColor !== false
+      return {
+        ...g,
+        nodes: g.nodes.map((n) =>
+          n.id !== nodeId
+            ? n
+            : {
+                ...n,
+                ports: n.ports.map((p) =>
+                  p.id !== portId || p.config?.kind !== "zone"
+                    ? p
+                    : { ...p, config: { ...p.config, colorHue: hue } }
+                ),
+              }
+        ),
+        // When wireFollowsColor is on, propagate the new hue to all wires
+        // from this zone. When off, leave the existing wire colours alone.
+        wires: wireFollows
+          ? g.wires.map((w) =>
+              w.fromNode === nodeId && w.fromPort === portId
+                ? { ...w, color: hue === undefined ? undefined : hueToColor(hue) }
+                : w
+            )
+          : g.wires,
+      }
+    })
+  }
+
+  const setZoneWireFollows = (
+    nodeId: string,
+    portId: string,
+    follows: boolean
+  ) => {
+    setGraph((g) => {
+      const node = g.nodes.find((n) => n.id === nodeId)
+      const port = node?.ports.find((p) => p.id === portId)
+      const cfg = port?.config?.kind === "zone" ? port.config : null
+      const hue = cfg?.colorHue
+      return {
+        ...g,
+        nodes: g.nodes.map((n) =>
+          n.id !== nodeId
+            ? n
+            : {
+                ...n,
+                ports: n.ports.map((p) =>
+                  p.id !== portId || p.config?.kind !== "zone"
+                    ? p
+                    : { ...p, config: { ...p.config, wireFollowsColor: follows } }
+                ),
+              }
+        ),
+        // Switching follows back on immediately re-syncs wire colours.
+        wires:
+          follows && typeof hue === "number"
+            ? g.wires.map((w) =>
+                w.fromNode === nodeId && w.fromPort === portId
+                  ? { ...w, color: hueToColor(hue) }
+                  : w
+              )
+            : g.wires,
       }
     })
   }
@@ -1021,6 +1175,8 @@ function PatchEditorShell({
           onAddZone={(nodeId) => addZone(nodeId)}
           onRemoveZone={(nodeId, portId) => removeZone(nodeId, portId)}
           onResizeZone={resizeZone}
+          onSetZoneColor={setZoneColor}
+          onSetZoneWireFollows={setZoneWireFollows}
         />
       ),
     },
@@ -1117,6 +1273,7 @@ function PatchEditorShell({
                   onOpenNodeMenu={openNodeMenu}
                   onOpenWireMenu={openWireMenu}
                   onOpenCompositeMenu={openCompositeMenu}
+                  onSelectComposite={selectComposite}
                   onDropFromLibrary={addNodeAt}
                   validation={validation}
                   soloed={soloed}
@@ -1247,6 +1404,8 @@ function SettingsTab({
     portId: string,
     range: { fromNote: number; toNote: number }
   ) => void
+  onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
+  onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
 }) {
   return (
     <div className="flex h-full flex-col gap-3">
@@ -1265,6 +1424,8 @@ function SettingsTab({
             onAddZone={onAddZone}
             onRemoveZone={onRemoveZone}
             onResizeZone={onResizeZone}
+            onSetZoneColor={onSetZoneColor}
+            onSetZoneWireFollows={onSetZoneWireFollows}
           />
         ) : selectedComposite ? (
           <CompositeSettings
@@ -1448,6 +1609,8 @@ function NodeSettings({
   onAddZone,
   onRemoveZone,
   onResizeZone,
+  onSetZoneColor,
+  onSetZoneWireFollows,
 }: {
   node: GraphNode
   onDelete: () => void
@@ -1458,6 +1621,8 @@ function NodeSettings({
     portId: string,
     range: { fromNote: number; toNote: number }
   ) => void
+  onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
+  onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
 }) {
   const isPlugin = node.kind === "instrument.plugin"
   return (
@@ -1522,6 +1687,10 @@ function NodeSettings({
             onAddZone={() => onAddZone(node.id)}
             onRemoveZone={(portId) => onRemoveZone(node.id, portId)}
             onResizeZone={(portId, range) => onResizeZone(node.id, portId, range)}
+            onSetZoneColor={(portId, hue) => onSetZoneColor(node.id, portId, hue)}
+            onSetZoneWireFollows={(portId, follows) =>
+              onSetZoneWireFollows(node.id, portId, follows)
+            }
           />
         )}
       </div>
@@ -1586,11 +1755,15 @@ function KindConfig({
   onAddZone,
   onRemoveZone,
   onResizeZone,
+  onSetZoneColor,
+  onSetZoneWireFollows,
 }: {
   node: GraphNode
   onAddZone: () => void
   onRemoveZone: (portId: string) => void
   onResizeZone: (portId: string, range: { fromNote: number; toNote: number }) => void
+  onSetZoneColor: (portId: string, hue: number | undefined) => void
+  onSetZoneWireFollows: (portId: string, follows: boolean) => void
 }) {
   return (
     <div className="flex h-full flex-col gap-2">
@@ -1618,6 +1791,8 @@ function KindConfig({
           onAddZone={onAddZone}
           onRemoveZone={onRemoveZone}
           onResizeZone={onResizeZone}
+          onSetZoneColor={onSetZoneColor}
+          onSetZoneWireFollows={onSetZoneWireFollows}
         />
       )}
       {node.kind === "instrument.sine" && (
@@ -1656,15 +1831,25 @@ function KeyboardZoneEditor({
   onAddZone,
   onRemoveZone,
   onResizeZone,
+  onSetZoneColor,
+  onSetZoneWireFollows,
 }: {
   node: GraphNode
   onAddZone: () => void
   onRemoveZone: (portId: string) => void
   onResizeZone: (portId: string, range: { fromNote: number; toNote: number }) => void
+  onSetZoneColor: (portId: string, hue: number | undefined) => void
+  onSetZoneWireFollows: (portId: string, follows: boolean) => void
 }) {
   const zonePorts = node.ports.filter(
     (p) => p.direction === "out" && p.config?.kind === "zone"
   )
+  // Track which zone is in "learn next note" mode — local UI only.
+  // In a real backend this would arm a per-port MIDI listener that captures
+  // the next note-on. Here it's a visual stub the user can click out of.
+  const [learning, setLearning] = React.useState<
+    { portId: string; field: "low" | "high" } | null
+  >(null)
   return (
     <div className="flex flex-col gap-2">
       <div className="rounded-md border bg-background">
@@ -1694,25 +1879,56 @@ function KeyboardZoneEditor({
           different sounds.
         </div>
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           {zonePorts.map((p) => {
-            const cfg = p.config as { kind: "zone"; fromNote: number; toNote: number }
+            const cfg = p.config as {
+              kind: "zone"
+              fromNote: number
+              toNote: number
+              colorHue?: number
+              wireFollowsColor?: boolean
+            }
+            const isLearning = learning?.portId === p.id
             return (
               <div
                 key={p.id}
-                className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+                className="flex flex-col gap-1.5 rounded-md border bg-background p-2"
               >
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ background: "oklch(0.7 0.15 280)" }}
-                />
-                <span className="font-mono text-[11px]">
-                  {noteNameFor(cfg.fromNote)}–{noteNameFor(cfg.toNote)}
-                </span>
-                <div className="ml-auto flex items-center gap-1">
-                  <NoteStepper
+                <div className="flex items-center gap-2">
+                  <span
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        typeof cfg.colorHue === "number"
+                          ? hueToColor(cfg.colorHue)
+                          : "oklch(0.7 0.15 280)",
+                    }}
+                  />
+                  <span className="font-mono text-[11px]">
+                    {noteNameFor(cfg.fromNote)}–{noteNameFor(cfg.toNote)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveZone(p.id)}
+                    title="Remove zone"
+                    className="ml-auto grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  <NoteStepperWithLearn
                     label="Low"
                     value={cfg.fromNote}
+                    learning={isLearning && learning?.field === "low"}
+                    onToggleLearn={() =>
+                      setLearning((l) =>
+                        l?.portId === p.id && l.field === "low"
+                          ? null
+                          : { portId: p.id, field: "low" }
+                      )
+                    }
                     onChange={(v) =>
                       onResizeZone(p.id, {
                         fromNote: Math.min(v, cfg.toNote),
@@ -1720,9 +1936,17 @@ function KeyboardZoneEditor({
                       })
                     }
                   />
-                  <NoteStepper
+                  <NoteStepperWithLearn
                     label="High"
                     value={cfg.toNote}
+                    learning={isLearning && learning?.field === "high"}
+                    onToggleLearn={() =>
+                      setLearning((l) =>
+                        l?.portId === p.id && l.field === "high"
+                          ? null
+                          : { portId: p.id, field: "high" }
+                      )
+                    }
                     onChange={(v) =>
                       onResizeZone(p.id, {
                         fromNote: cfg.fromNote,
@@ -1730,14 +1954,46 @@ function KeyboardZoneEditor({
                       })
                     }
                   />
-                  <button
-                    type="button"
-                    onClick={() => onRemoveZone(p.id)}
-                    title="Remove zone"
-                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Colour
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onSetZoneColor(p.id, undefined)}
+                      className={cn(
+                        "h-5 rounded border px-1.5 text-[9px] hover:bg-muted/40",
+                        cfg.colorHue === undefined && "border-primary/40 bg-primary/5"
+                      )}
+                    >
+                      Auto
+                    </button>
+                    {ZONE_HUES.map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => onSetZoneColor(p.id, h)}
+                        className={cn(
+                          "size-5 rounded border hover:scale-110 transition-transform",
+                          cfg.colorHue === h && "ring-2 ring-primary"
+                        )}
+                        style={{ background: hueToColor(h) }}
+                        title={`Zone hue ${h}`}
+                      />
+                    ))}
+                  </div>
+                  <label className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={cfg.wireFollowsColor !== false}
+                      onChange={(e) => onSetZoneWireFollows(p.id, e.target.checked)}
+                      className="size-3"
+                    />
+                    Wires match
+                  </label>
                 </div>
               </div>
             )
@@ -1748,14 +2004,18 @@ function KeyboardZoneEditor({
   )
 }
 
-function NoteStepper({
+function NoteStepperWithLearn({
   label,
   value,
+  learning,
   onChange,
+  onToggleLearn,
 }: {
   label: string
   value: number
+  learning?: boolean
   onChange: (v: number) => void
+  onToggleLearn?: () => void
 }) {
   const clamp = (v: number) => Math.max(0, Math.min(127, v))
   return (
@@ -1779,6 +2039,19 @@ function NoteStepper({
         className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
       >
         +
+      </button>
+      <button
+        type="button"
+        onClick={onToggleLearn}
+        title={learning ? "Cancel learn — press to stop" : "Press to learn the next note from your controller"}
+        className={cn(
+          "ml-0.5 rounded px-1.5 text-[9px] font-semibold uppercase tracking-wider",
+          learning
+            ? "bg-primary text-primary-foreground animate-pulse"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        )}
+      >
+        {learning ? "Learn…" : "Learn"}
       </button>
     </div>
   )

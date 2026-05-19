@@ -23,6 +23,10 @@ export interface CompositeBlockFrameProps {
   connectedPorts?: Record<string, boolean>
   onToggleLock?: () => void
   onOpenMenu?: (anchor: { x: number; y: number }) => void
+  /** Single-click on the title chip — selects the composite (opens settings). */
+  onSelect?: () => void
+  /** Left pointer-down on the title chip — begins a drag of the whole block. */
+  onLabelPointerDown?: (e: React.PointerEvent) => void
   onPortPointerDown?: (portId: string, e: React.PointerEvent) => void
   onPortPointerEnter?: (portId: string) => void
   onPortPointerLeave?: (portId: string) => void
@@ -48,6 +52,8 @@ export function CompositeBlockFrame({
   connectedPorts,
   onToggleLock,
   onOpenMenu,
+  onSelect,
+  onLabelPointerDown,
   onPortPointerDown,
   onPortPointerEnter,
   onPortPointerLeave,
@@ -94,22 +100,39 @@ export function CompositeBlockFrame({
         onOpenMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {/* Title chip on top edge */}
-      <button
-        type="button"
+      {/* Title chip on top edge.
+          - Left pointer-down on the chip body → start drag of whole block.
+          - Plain click (no movement) → select composite (opens settings).
+          - Right click → context menu.
+          - Lock icon → toggle lock only.
+          The chip is a <div> (not a button) so it can be a pointer-down
+          drag handle without firing browser default click semantics. */}
+      <div
         className={cn(
           "pointer-events-auto absolute -top-[14px] left-3 flex items-center gap-1.5",
           "rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm",
-          "bg-card text-foreground hover:brightness-110"
+          "bg-card text-foreground cursor-grab hover:brightness-110 active:cursor-grabbing select-none"
         )}
         style={{ borderColor }}
-        onClick={(e) => {
+        onPointerDown={(e) => {
+          if (e.button !== 0) return
+          // Lock icon owns its own handler — bail if the press landed there.
+          if ((e.target as HTMLElement).closest("[data-composite-lock]")) return
           e.stopPropagation()
-          onOpenMenu?.({ x: e.clientX, y: e.clientY })
+          onSelect?.()
+          onLabelPointerDown?.(e)
         }}
-        title="Composite options"
+        onContextMenu={(e) => {
+          if (!onOpenMenu) return
+          e.preventDefault()
+          e.stopPropagation()
+          onOpenMenu({ x: e.clientX, y: e.clientY })
+        }}
+        title="Drag to move · right-click for options"
       >
         <span
+          data-composite-lock
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
             onToggleLock?.()
@@ -129,7 +152,7 @@ export function CompositeBlockFrame({
         <span className="normal-case">{composite.name}</span>
         <span className="text-muted-foreground">·</span>
         <span className="text-muted-foreground">{nodes.length} blocks</span>
-      </button>
+      </div>
 
       <PortColumn
         ports={inputs}

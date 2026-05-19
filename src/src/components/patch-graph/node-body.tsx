@@ -81,32 +81,14 @@ function SimpleIconBody({
   )
 }
 
-function KeyboardBody({ node }: { node: GraphNode }) {
-  const zones = node.ports
-    .filter((p) => p.direction === "out" && p.config?.kind === "zone")
-    .map((p) => p.config as { kind: "zone"; fromNote: number; toNote: number })
-
+function KeyboardBody({ node: _node }: { node: GraphNode }) {
+  // Just the icon — zone ranges render as subtitles under their output
+  // port labels on the right edge of the node, not stacked under the icon.
   return (
-    <div className="flex flex-col items-center gap-0.5 py-1">
+    <div className="flex flex-col items-center gap-1 py-2">
       <Piano className="size-5 text-muted-foreground" />
-      {zones.length === 0 ? (
-        <span className="text-[10px] text-muted-foreground">full range</span>
-      ) : (
-        <div className="flex flex-col items-center gap-px text-[9px] font-mono text-muted-foreground">
-          {zones.map((z, i) => (
-            <span key={i}>
-              {noteName(z.fromNote)}–{noteName(z.toNote)}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   )
-}
-
-function noteName(midi: number): string {
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
 }
 
 function PadsBody({ node }: { node: GraphNode }) {
