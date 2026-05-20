@@ -25,6 +25,8 @@ pub fn run() {
             commands::engine_start,
             commands::engine_stop,
             commands::engine_status,
+            commands::load_patch,
+            commands::save_patch,
         ])
         .setup(|app| {
             tracing_subscriber::fmt()
@@ -38,6 +40,10 @@ pub fn run() {
             // lives in Tauri state for the rest of the process.
             let handle = engine::spawn(app.handle().clone());
             app.manage(handle);
+
+            // Serializes plugin / MIDI / audio device enumeration so
+            // CLAP dlopen can't race CoreAudio HAL on macOS.
+            app.manage(commands::DiscoveryLock::default());
             Ok(())
         })
         .run(tauri::generate_context!())
