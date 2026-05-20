@@ -26,6 +26,8 @@ export interface AppShellFrameProps {
   canvas: React.ReactNode
   inspector: React.ReactNode
   onGoLive?: () => void
+  /** Right-side actions in the mode-switcher row (Open Show, Save Show, etc.). */
+  headerActions?: React.ReactNode
   className?: string
 }
 
@@ -38,6 +40,7 @@ export function AppShellFrame({
   canvas,
   inspector,
   onGoLive,
+  headerActions,
   className,
 }: AppShellFrameProps) {
   const isPerform = mode === "perform"
@@ -96,12 +99,15 @@ export function AppShellFrame({
             <span className="text-foreground">{songName ?? "—"}</span>
           </nav>
         </div>
-        {isPerform && (
-          <Button onClick={onGoLive} className="gap-2">
-            <Play className="size-4 fill-current" />
-            Go Live
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {headerActions}
+          {isPerform && (
+            <Button onClick={onGoLive} className="gap-2">
+              <Play className="size-4 fill-current" />
+              Go Live
+            </Button>
+          )}
+        </div>
       </div>
 
       <div

@@ -233,14 +233,20 @@ export interface PatchEditorProps {
   showName: string
   /** Songs + nested patches rendered in the left context panel. */
   songs: ShowOutlineSong[]
-  /** Initial patch graph to render in the canvas. */
+  /** Patch graph currently being edited. Controlled by the parent. */
   graph: PatchGraph
-  /** Which patch in `songs` to highlight as current. */
+  /** Called with the next graph whenever a mutation lands. */
+  onGraphChange: (graph: PatchGraph) => void
+  /** Which patch in `songs` is highlighted as current. */
   selectedPatchId?: string
+  /** Notify the parent when the user picks a different patch. */
+  onSelectPatch?: (patchId: string) => void
   /** Name of the currently-loaded patch (shown in the title bar). */
   patchName: string
   /** Name of the song the patch lives under. */
   songName: string
+  /** Optional actions slot in the title bar (Open / Save buttons, etc.). */
+  headerActions?: React.ReactNode
   /** User-saved composite presets shown in the right-panel Blocks tab. */
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
   /** Source kinds advertised in the right-panel Sources group. */
@@ -250,15 +256,17 @@ export interface PatchEditorProps {
 export function PatchEditor({
   showName,
   songs,
-  graph: initialGraph,
-  selectedPatchId: initialSelectedPatchId,
+  graph,
+  onGraphChange,
+  selectedPatchId,
+  onSelectPatch,
   patchName,
   songName,
+  headerActions,
   savedComposites = [],
   rigSources,
 }: PatchEditorProps) {
   const [mode, setMode] = React.useState<AppMode>("program")
-  const [graph, setGraphRaw] = React.useState<PatchGraph>(initialGraph)
   const [history, setHistory] = React.useState<PatchGraph[]>([])
   const [redoStack, setRedoStack] = React.useState<PatchGraph[]>([])
 
@@ -266,9 +274,21 @@ export function PatchEditor({
   const [selectedWireId, setSelectedWireId] = React.useState<string | undefined>()
   const [selectedCompositeId, setSelectedCompositeId] = React.useState<string | undefined>()
 
-  const [selectedPatchId, setSelectedPatchId] = React.useState<string | undefined>(
-    initialSelectedPatchId
-  )
+  // Reset undo history + selections whenever the active patch changes.
+  // Cross-patch undo would surprise users; history belongs to the patch
+  // you're editing.
+  const lastPatchIdRef = React.useRef(selectedPatchId)
+  React.useEffect(() => {
+    if (lastPatchIdRef.current !== selectedPatchId) {
+      setHistory([])
+      setRedoStack([])
+      setSelectedNodeIds(new Set())
+      setSelectedWireId(undefined)
+      setSelectedCompositeId(undefined)
+      lastPatchIdRef.current = selectedPatchId
+    }
+  }, [selectedPatchId])
+
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null)
   const [bottomTabId, setBottomTabId] = React.useState<BottomTabId | null>(null)
 
@@ -289,22 +309,30 @@ export function PatchEditor({
 
   // -------------------------------------------------------------------
   // Undo / redo wrapper around setGraph
+  //
+  // PatchEditor is now controlled — the parent owns the graph. We keep
+  // history local because it's per-patch UI state, not show-document
+  // state (per ADR-0005, mutation history doesn't persist).
   // -------------------------------------------------------------------
 
   const dragInProgressRef = React.useRef(false)
+  const graphRef = React.useRef(graph)
+  React.useEffect(() => {
+    graphRef.current = graph
+  }, [graph])
 
   const setGraph = React.useCallback(
     (updater: (g: PatchGraph) => PatchGraph, opts?: { skipHistory?: boolean }) => {
-      setGraphRaw((g) => {
-        const next = updater(g)
-        if (next !== g && !opts?.skipHistory && !dragInProgressRef.current) {
-          setHistory((h) => [...h, g].slice(-50))
-          setRedoStack([])
-        }
-        return next
-      })
+      const prev = graphRef.current
+      const next = updater(prev)
+      if (next === prev) return
+      if (!opts?.skipHistory && !dragInProgressRef.current) {
+        setHistory((h) => [...h, prev].slice(-50))
+        setRedoStack([])
+      }
+      onGraphChange(next)
     },
-    []
+    [onGraphChange]
   )
 
   const onNodeDragStart = () => {
@@ -321,7 +349,7 @@ export function PatchEditor({
       if (h.length === 0) return h
       const prev = h[h.length - 1]
       setRedoStack((r) => [...r, graph])
-      setGraphRaw(prev)
+      onGraphChange(prev)
       return h.slice(0, -1)
     })
   }
@@ -331,7 +359,7 @@ export function PatchEditor({
       if (r.length === 0) return r
       const next = r[r.length - 1]
       setHistory((h) => [...h, graph])
-      setGraphRaw(next)
+      onGraphChange(next)
       return r.slice(0, -1)
     })
   }
@@ -939,13 +967,14 @@ export function PatchEditor({
         mode={mode}
         onModeChange={setMode}
         showName={showName}
+        headerActions={headerActions}
         contextPanel={
           <ShowOutline
             showName={showName}
             songs={songs}
             mode="program"
             currentPatchId={selectedPatchId}
-            onPickPatch={(_s, p) => setSelectedPatchId(p)}
+            onPickPatch={(_s, p) => onSelectPatch?.(p)}
             onAddSong={() => {}}
             onAddPatch={() => {}}
             className="h-full"

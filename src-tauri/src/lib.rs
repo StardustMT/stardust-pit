@@ -27,6 +27,8 @@ pub fn run() {
             commands::engine_status,
             commands::load_patch,
             commands::save_patch,
+            commands::load_show,
+            commands::save_show,
         ])
         .setup(|app| {
             tracing_subscriber::fmt()

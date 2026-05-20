@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use stardust_core::audio;
 use stardust_core::midi;
 use stardust_core::patch::{PatchDocument, ValidationError};
+use stardust_core::show::{ShowDocument, ShowValidationError};
 use stardust_core::plugin::clap;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -284,6 +285,49 @@ pub fn save_patch(doc: PatchDocument) -> Result<String, PatchError> {
         .validate()
         .map_err(|errors| PatchError::Validation { errors })?;
     doc.to_json_pretty().map_err(|e| PatchError::Parse {
+        message: e.to_string(),
+    })
+}
+
+// =============================================================================
+// Show document load/save
+//
+// Same shape as the patch commands above: pure JSON <-> struct, file I/O
+// owned by the UI via `tauri-plugin-fs` + `tauri-plugin-dialog`. Errors
+// are structured so the UI can render parse failures (one message) and
+// validation failures (a list, each carrying patch context per ADR-0005)
+// differently.
+// =============================================================================
+
+/// Why a show document couldn't be loaded or saved.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ShowError {
+    /// JSON malformed, not a stardust show, or newer schema than this build.
+    Parse { message: String },
+    /// Document parsed but the show (or one of its embedded patch graphs)
+    /// failed structural validation. `validate` collects every error so the
+    /// UI can show all problems at once.
+    Validation { errors: Vec<ShowValidationError> },
+}
+
+#[tauri::command]
+pub fn load_show(json: String) -> Result<ShowDocument, ShowError> {
+    let doc = ShowDocument::from_json(&json).map_err(|e| ShowError::Parse {
+        message: e.to_string(),
+    })?;
+    doc.show
+        .validate()
+        .map_err(|errors| ShowError::Validation { errors })?;
+    Ok(doc)
+}
+
+#[tauri::command]
+pub fn save_show(doc: ShowDocument) -> Result<String, ShowError> {
+    doc.show
+        .validate()
+        .map_err(|errors| ShowError::Validation { errors })?;
+    doc.to_json_pretty().map_err(|e| ShowError::Parse {
         message: e.to_string(),
     })
 }

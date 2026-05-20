@@ -14,6 +14,7 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import type { NodeKind, PatchGraph } from "@/components/patch-graph/_types"
 
 // =============================================================================
 // Plugin discovery
@@ -121,6 +122,115 @@ export function onEngineStatus(
   cb: (s: EngineStatus) => void,
 ): Promise<UnlistenFn> {
   return listen<EngineStatus>("engine://status", (e) => cb(e.payload))
+}
+
+// =============================================================================
+// Show document load/save
+//
+// Mirror of `stardust_show::ShowDocument` and surrounding types. The Rust
+// crate inlines each patch's `PatchGraph`, so the TS shape does too — no
+// side-tables. `kind: "stardust.show"` and `schemaVersion: 1` per ADR-0003
+// / ADR-0005.
+// =============================================================================
+
+export interface ShowHeader {
+  kind: "stardust.show"
+  schemaVersion: 1
+  stardustVersion?: string
+  /** ISO-8601 timestamp set by the UI on every save. */
+  savedAt?: string
+}
+
+export interface RigSourceWire {
+  kind: NodeKind
+  label: string
+}
+
+export interface RigWire {
+  sources: RigSourceWire[]
+}
+
+export interface SavedBlockWire {
+  id: string
+  name: string
+  nodeCount: number
+}
+
+export interface PatchWire {
+  id: string
+  number: number
+  name: string
+  compound?: boolean
+  graph: PatchGraph
+}
+
+export interface SongWire {
+  id: string
+  number: number
+  name: string
+  patches: PatchWire[]
+}
+
+export interface ShowWire {
+  name: string
+  songs: SongWire[]
+  rig: RigWire
+  savedBlocks?: SavedBlockWire[]
+}
+
+export type ShowDocument = ShowHeader & { show: ShowWire }
+
+/**
+ * Tagged union mirroring `stardust_patch::ValidationError`. Same shape is
+ * shared by patch and show error reporting (the show variant
+ * `PatchInvalid` carries a `Vec<ValidationError>` from the embedded patch
+ * graph).
+ */
+export type GraphValidationError =
+  | { kind: "duplicateNodeId"; id: string }
+  | { kind: "duplicateWireId"; id: string }
+  | { kind: "duplicateCompositeId"; id: string }
+  | { kind: "duplicatePortId"; node: string; port: string }
+  | { kind: "wireUnknownEndpoint"; wire: string; endpoint: string }
+  | { kind: "wireUnknownPort"; wire: string; endpoint: string; port: string }
+  | { kind: "wireSignalMismatch"; wire: string; from: string; to: string }
+  | { kind: "wireDirection"; wire: string; from: string; to: string }
+  | { kind: "compositeUnknownNode"; composite: string; node: string }
+  | { kind: "compositePromotedPortInvalid"; composite: string; node: string; port: string }
+  | { kind: "compositeNotConnected"; composite: string }
+
+/** Mirror of `stardust_show::ShowValidationError`. */
+export type ShowValidationError =
+  | { kind: "duplicateSongId"; id: string }
+  | { kind: "duplicatePatchId"; id: string }
+  | { kind: "duplicateBlockId"; id: string }
+  | {
+      kind: "patchInvalid"
+      song: string
+      patch: string
+      errors: GraphValidationError[]
+    }
+
+export type ShowError =
+  | { kind: "parse"; message: string }
+  | { kind: "validation"; errors: ShowValidationError[] }
+
+/**
+ * Tauri rejects invoke promises with the serialized error variant for
+ * commands whose `Result::Err` is `Serialize`. Caller `.catch(asShowError)`
+ * gets a typed `ShowError` instead of `unknown`.
+ */
+export function asShowError(e: unknown): ShowError {
+  if (e && typeof e === "object" && "kind" in e) return e as ShowError
+  return { kind: "parse", message: String(e) }
+}
+
+export function loadShow(json: string): Promise<ShowDocument> {
+  return invoke<ShowDocument>("load_show", { json })
+}
+
+export function saveShow(doc: ShowDocument): Promise<string> {
+  return invoke<string>("save_show", { doc })
 }
 
 // =============================================================================
