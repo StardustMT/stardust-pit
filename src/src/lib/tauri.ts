@@ -111,7 +111,7 @@ export type EngineStartError =
  */
 export function engineStartFromPatch(args: {
   patch: PatchWire
-  midiInput: string
+  midiInput: string | null
   audioOutput: string | null
 }): Promise<void> {
   return invoke<void>("engine_start_from_patch", args)

@@ -20,11 +20,11 @@ import {
 } from "@/lib/tauri"
 
 /**
- * Diagnostic engine controls. The patch picks the plugin now (per the
- * `instrument.plugin` node in the currently-selected patch); this panel
- * only routes the audio / MIDI endpoints. Start sends the active patch
- * to the Rust side, which walks its graph to find the instrument and
- * brings the plugin online.
+ * Diagnostic engine routing panel. The engine is always-on: it hosts
+ * whatever the currently-selected patch points at, and stops itself when
+ * the patch has no plugin to host. There is no Start/Stop button. The
+ * panel exposes the routing knobs (MIDI input, audio output) plus a live
+ * status readout. Changing either dropdown rebinds the engine.
  *
  * Hidden when not running inside Tauri (Storybook / web dev) — the
  * commands would fail anyway and the device lists would be empty.
@@ -43,8 +43,7 @@ function EnginePanelInner() {
   const [midiInput, setMidiInput] = useState<string>("__none__")
   const [audioOutput, setAudioOutput] = useState<string>("__default__")
   const [status, setStatus] = useState<EngineStatus>({ kind: "idle" })
-  const [pending, setPending] = useState(false)
-  const [startError, setStartError] = useState<EngineStartError | undefined>()
+  const [syncError, setSyncError] = useState<EngineStartError | undefined>()
 
   const { refresh: refreshPluginScan } = usePluginScan()
 
@@ -97,47 +96,81 @@ function EnginePanelInner() {
     }
   }, [])
 
-  // Auto-pick the first hardware MIDI input if one's available — keeps
-  // Start one-click for users with a controller. Users without one stay
-  // on "__none__" and play via the on-screen keyboard.
+  // Auto-pick the first hardware MIDI input once devices load — saves the
+  // user a dropdown click. Users without a controller stay on "__none__"
+  // and play via the on-screen keyboard.
   useEffect(() => {
     if (midiInput === "__none__" && midiInputs.length > 0) {
       setMidiInput(midiInputs[0].name)
     }
   }, [midiInputs, midiInput])
 
-  const canStart =
-    !pending &&
-    currentPatch != null &&
-    pluginChoice != null &&
-    status.kind !== "running"
-  const canStop = !pending && status.kind === "running"
+  // Sync the engine to the desired state (always-on model).
+  //
+  // The desired state is a pure function of (current patch, plugin choice,
+  // midi input, audio output). Whenever any input changes:
+  //  - If the patch has a hostable plugin → bring up / rebind to it with
+  //    the current routing.
+  //  - Otherwise → stop the engine (silence when there's nothing to play).
+  //
+  // The Rust engine's Start command tears down any previous plugin before
+  // bringing up the next one, so rebind is just another Start call. A ref
+  // tracks the last params we asked for so we skip no-op rebinds when an
+  // unrelated dep moves.
+  const lastSyncRef = useRef<{
+    patchId: string | undefined
+    bundlePath: string | undefined
+    pluginId: string | undefined
+    midiInput: string
+    audioOutput: string
+  } | null>(null)
 
-  async function start() {
-    if (!currentPatch) return
-    setPending(true)
-    setStartError(undefined)
-    try {
-      await engineStartFromPatch({
-        patch: currentPatch,
-        midiInput: midiInput === "__none__" ? null : midiInput,
-        audioOutput: audioOutput === "__default__" ? null : audioOutput,
-      })
-    } catch (e) {
-      setStartError(asEngineStartError(e))
-    } finally {
-      setPending(false)
+  useEffect(() => {
+    const want = {
+      patchId: currentPatch?.id,
+      bundlePath: pluginChoice?.bundlePath,
+      pluginId: pluginChoice?.pluginId,
+      midiInput,
+      audioOutput,
     }
-  }
+    const prev = lastSyncRef.current
+    if (
+      prev &&
+      prev.patchId === want.patchId &&
+      prev.bundlePath === want.bundlePath &&
+      prev.pluginId === want.pluginId &&
+      prev.midiInput === want.midiInput &&
+      prev.audioOutput === want.audioOutput
+    ) {
+      return
+    }
+    lastSyncRef.current = want
 
-  async function stop() {
-    setPending(true)
-    try {
-      await engineStop()
-    } finally {
-      setPending(false)
+    let cancelled = false
+    void (async () => {
+      setSyncError(undefined)
+      if (!currentPatch || !pluginChoice) {
+        try {
+          await engineStop()
+        } catch {
+          // Engine status feed reflects whatever actually happened.
+        }
+        return
+      }
+      try {
+        await engineStartFromPatch({
+          patch: currentPatch,
+          midiInput: midiInput === "__none__" ? null : midiInput,
+          audioOutput: audioOutput === "__default__" ? null : audioOutput,
+        })
+      } catch (e) {
+        if (!cancelled) setSyncError(asEngineStartError(e))
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }
+  }, [currentPatch, pluginChoice, midiInput, audioOutput])
 
   return (
     <div className="border-b border-border bg-muted/40 px-3 py-2 text-sm">
@@ -155,7 +188,6 @@ function EnginePanelInner() {
           className="rounded border bg-background px-2 py-1 text-xs"
           value={midiInput}
           onChange={(e) => setMidiInput(e.target.value)}
-          disabled={status.kind === "running"}
           title="MIDI input device. Pick 'On-screen keyboard only' to play from the Preview tab."
         >
           <option value="__none__">On-screen keyboard only</option>
@@ -170,7 +202,6 @@ function EnginePanelInner() {
           className="rounded border bg-background px-2 py-1 text-xs"
           value={audioOutput}
           onChange={(e) => setAudioOutput(e.target.value)}
-          disabled={status.kind === "running"}
         >
           <option value="__default__">Default output</option>
           {audioOutputs.map((o) => (
@@ -183,36 +214,18 @@ function EnginePanelInner() {
 
         <Button
           size="sm"
-          onClick={start}
-          disabled={!canStart}
-          title={
-            !currentPatch
-              ? "No patch selected"
-              : !pluginChoice
-                ? "Pick a plugin on the instrument node in the patch editor"
-                : undefined
-          }
-        >
-          Start
-        </Button>
-        <Button size="sm" variant="outline" onClick={stop} disabled={!canStop}>
-          Stop
-        </Button>
-        <Button
-          size="sm"
           variant="ghost"
           onClick={() => {
             void refreshDevices(setMidiInputs, setAudioOutputs)
             void refreshPluginScan()
           }}
-          disabled={status.kind === "running"}
           title="Re-scan plugins + devices"
         >
           Refresh
         </Button>
 
         <div className="ml-auto">
-          <StatusLine status={status} startError={startError} />
+          <StatusLine status={status} syncError={syncError} />
         </div>
       </div>
     </div>
@@ -243,15 +256,15 @@ function PatchPluginChip({
 
 function StatusLine({
   status,
-  startError,
+  syncError,
 }: {
   status: EngineStatus
-  startError: EngineStartError | undefined
+  syncError: EngineStartError | undefined
 }) {
-  if (startError) {
+  if (syncError) {
     return (
       <span className="text-xs text-destructive">
-        {describeStartError(startError)}
+        {describeStartError(syncError)}
       </span>
     )
   }
