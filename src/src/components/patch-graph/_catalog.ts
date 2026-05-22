@@ -148,7 +148,9 @@ export const NODE_CATALOG: NodeSpec[] = [
       { id: "audio-l", label: "Audio L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
       { id: "audio-r", label: "Audio R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
     ],
-    defaultConfig: () => ({ pluginUri: null, preset: null }),
+    // Picker writes { bundlePath, pluginId, pluginName, pluginVendor } once
+    // the user chooses a plugin. Empty default = "no plugin picked yet".
+    defaultConfig: () => ({}),
   },
   {
     kind: "instrument.sine",

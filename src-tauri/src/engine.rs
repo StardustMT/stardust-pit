@@ -22,7 +22,7 @@ use stardust_core::plugin::clap::{
     AudioPorts, EventBuffer, InputChannel, MidiEvent, NoteOffEvent, NoteOnEvent,
     Pckn, PluginAudioConfiguration, PluginEntry, PluginInstance, StardustHost,
 };
-use stardust_core::rt::RingBuffer;
+use stardust_core::rt::{Producer, RingBuffer};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
@@ -46,6 +46,9 @@ const DROPPED_TICK: Duration = Duration::from_secs(1);
 pub enum EngineCommand {
     Start(StartConfig),
     Stop,
+    /// Push a MIDI message from a UI source (on-screen keyboard) into the
+    /// active plugin. Silently dropped if the engine isn't running.
+    SendMidi(MidiMessage),
     /// Reserved for graceful app shutdown — not sent today; the engine
     /// thread exits with the process and its `Drop` impls clean up.
     #[allow(dead_code)]
@@ -57,7 +60,8 @@ pub enum EngineCommand {
 pub struct StartConfig {
     pub bundle_path: PathBuf,
     pub plugin_id: String,
-    pub midi_input: String,
+    /// `None` → no hardware MIDI input; engine runs UI-source only.
+    pub midi_input: Option<String>,
     /// `None` → use the host default output device.
     pub audio_output: Option<String>,
 }
@@ -72,7 +76,9 @@ pub enum EngineStatus {
     Running {
         plugin_name: String,
         plugin_id: String,
-        midi_input: String,
+        /// `None` when the engine is running with no hardware MIDI input;
+        /// only the on-screen keyboard / UI source is feeding it.
+        midi_input: Option<String>,
         audio_output: String,
         sample_rate: u32,
         channels: u16,
@@ -170,6 +176,17 @@ fn run_engine(
                 drop(running.take());
                 publish(&status, &app, EngineStatus::Idle);
             }
+            Some(EngineCommand::SendMidi(msg)) => {
+                // On-screen keyboard / UI-originated note. Push into the
+                // dedicated UI ring so the audio callback picks it up next
+                // frame. Drops count against the same "events dropped"
+                // counter the hardware MIDI thread uses.
+                if let Some(r) = running.as_mut() {
+                    if r.ui_producer.push(msg).is_err() {
+                        r.dropped.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
             Some(EngineCommand::Shutdown) => {
                 drop(running.take());
                 break;
@@ -204,16 +221,22 @@ struct Running {
     // Audio handle holds the cpal Stream + the audio processor closure
     // that captured `started`. Drop kills the stream first.
     _audio: AudioOutputHandle,
-    _midi: MidiInputHandle,
+    _midi: Option<MidiInputHandle>,
     _plugin: PluginInstance<StardustHost>,
     _entry: PluginEntry,
+
+    /// Producer for the UI-originated MIDI ring. The audio callback owns
+    /// the matching consumer; the engine thread pushes here whenever a
+    /// `SendMidi` command arrives. `!Sync` but only ever touched on the
+    /// engine thread, so no synchronisation needed.
+    ui_producer: Producer<MidiMessage>,
 
     dropped: Arc<AtomicUsize>,
     last_published_dropped: usize,
 
     plugin_name: String,
     plugin_id: String,
-    midi_input: String,
+    midi_input: Option<String>,
     audio_output: String,
     sample_rate: u32,
     channels: u16,
@@ -331,19 +354,33 @@ fn start(cfg: StartConfig, _app: &AppHandle) -> Result<Running> {
         .map_err(|e| anyhow!("plugin failed to start processing: {e:?}"))?;
 
     // ---------------------------------------------------------------
-    // 4) MIDI input → SPSC ring buffer.
+    // 4) MIDI input → SPSC ring buffer (hardware + UI source).
+    //
+    // Two rings so the engine has two producers (midir thread for
+    // hardware events, engine thread for on-screen-keyboard events)
+    // without giving up rtrb's SPSC contract. Both consumers are
+    // owned by the audio callback; the callback drains both each
+    // frame. Hardware MIDI is optional now — the engine still runs
+    // with just the UI source, useful for laptop dev / no controller.
     // ---------------------------------------------------------------
-    let (mut producer, mut consumer) = RingBuffer::<MidiMessage>::new(EVENT_QUEUE);
+    let (mut hw_producer, mut hw_consumer) = RingBuffer::<MidiMessage>::new(EVENT_QUEUE);
+    let (ui_producer, mut ui_consumer) = RingBuffer::<MidiMessage>::new(EVENT_QUEUE);
     let dropped = Arc::new(AtomicUsize::new(0));
-    let dropped_for_midi = dropped.clone();
-    let midi = open_input(&cfg.midi_input, move |_ts, msg| {
-        if matches!(msg, MidiMessage::Other) {
-            return;
+
+    let midi = match cfg.midi_input.as_ref() {
+        Some(name) => {
+            let dropped_for_midi = dropped.clone();
+            Some(open_input(name, move |_ts, msg| {
+                if matches!(msg, MidiMessage::Other) {
+                    return;
+                }
+                if hw_producer.push(msg).is_err() {
+                    dropped_for_midi.fetch_add(1, Ordering::Relaxed);
+                }
+            })?)
         }
-        if producer.push(msg).is_err() {
-            dropped_for_midi.fetch_add(1, Ordering::Relaxed);
-        }
-    })?;
+        None => None,
+    };
 
     // ---------------------------------------------------------------
     // 5) Audio callback owns the plugin audio processor + buffers.
@@ -363,7 +400,10 @@ fn start(cfg: StartConfig, _app: &AppHandle) -> Result<Running> {
 
         input_events.clear();
         output_events.clear();
-        while let Ok(msg) = consumer.pop() {
+        while let Ok(msg) = hw_consumer.pop() {
+            push_midi_as_clap_events(&mut input_events, msg);
+        }
+        while let Ok(msg) = ui_consumer.pop() {
             push_midi_as_clap_events(&mut input_events, msg);
         }
 
@@ -452,7 +492,7 @@ fn start(cfg: StartConfig, _app: &AppHandle) -> Result<Running> {
     tracing::info!(
         plugin = %plugin_name,
         plugin_id = %plugin_id,
-        midi = %cfg.midi_input,
+        midi = ?cfg.midi_input,
         audio = %audio_name,
         sample_rate,
         channels,
@@ -464,6 +504,7 @@ fn start(cfg: StartConfig, _app: &AppHandle) -> Result<Running> {
         _midi: midi,
         _plugin: plugin,
         _entry: entry,
+        ui_producer,
         dropped,
         last_published_dropped: 0,
         plugin_name,

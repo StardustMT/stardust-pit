@@ -1,26 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { getPluginChoice } from "@/components/patch-graph/_types"
+import { usePluginScan } from "@/lib/use-plugin-scan"
+import { useShowStore } from "@/state/show-store"
 import {
   type AudioOutputInfo,
-  type ClapPluginInfo,
+  type EngineStartError,
   type EngineStatus,
   type MidiInputInfo,
-  engineStart,
+  type PatchWire,
+  asEngineStartError,
+  engineStartFromPatch,
   engineStatus,
   engineStop,
   isTauri,
   listAudioOutputs,
-  listClapPlugins,
   listMidiInputs,
   onEngineStatus,
 } from "@/lib/tauri"
 
 /**
- * Diagnostic engine controls — pick a CLAP plugin, MIDI input, audio
- * output, hit Start, hear the plugin play live. The patch editor below
- * still drives nothing real; this panel exists to prove the engine
- * thread + Tauri command surface works end-to-end before we wire the
- * patch graph to it.
+ * Diagnostic engine controls. The patch picks the plugin now (per the
+ * `instrument.plugin` node in the currently-selected patch); this panel
+ * only routes the audio / MIDI endpoints. Start sends the active patch
+ * to the Rust side, which walks its graph to find the instrument and
+ * brings the plugin online.
  *
  * Hidden when not running inside Tauri (Storybook / web dev) — the
  * commands would fail anyway and the device lists would be empty.
@@ -32,18 +36,44 @@ export function EnginePanel() {
 }
 
 function EnginePanelInner() {
-  const [plugins, setPlugins] = useState<ClapPluginInfo[]>([])
   const [midiInputs, setMidiInputs] = useState<MidiInputInfo[]>([])
   const [audioOutputs, setAudioOutputs] = useState<AudioOutputInfo[]>([])
-  const [pluginKey, setPluginKey] = useState<string>("")
-  const [midiInput, setMidiInput] = useState<string>("")
+  // "__none__" sentinel = run without a hardware MIDI input. The on-screen
+  // keyboard in the Preview tab still drives the plugin via engine_send_midi.
+  const [midiInput, setMidiInput] = useState<string>("__none__")
   const [audioOutput, setAudioOutput] = useState<string>("__default__")
   const [status, setStatus] = useState<EngineStatus>({ kind: "idle" })
   const [pending, setPending] = useState(false)
-  // One-shot device refresh on mount. Live device swaps (USB controller
-  // added after launch) need a Refresh button — added below.
+  const [startError, setStartError] = useState<EngineStartError | undefined>()
+
+  const { refresh: refreshPluginScan } = usePluginScan()
+
+  // Subscribe to just enough store state to find the current patch. The
+  // engine command needs the full patch (graph + meta) on Start, not a
+  // derived selector — so we pull the raw fields and resolve in render.
+  const songs = useShowStore((s) => s.songs)
+  const currentPatchId = useShowStore((s) => s.currentPatchId)
+  const currentPatch: PatchWire | undefined = useMemo(() => {
+    if (!currentPatchId) return undefined
+    for (const song of songs) {
+      const p = song.patches.find((p) => p.id === currentPatchId)
+      if (p) return p
+    }
+    return undefined
+  }, [songs, currentPatchId])
+  const pluginChoice = useMemo(() => {
+    if (!currentPatch) return undefined
+    for (const n of currentPatch.graph.nodes) {
+      if (n.kind === "instrument.plugin") {
+        const c = getPluginChoice(n)
+        if (c) return c
+      }
+    }
+    return undefined
+  }, [currentPatch])
+
   useEffect(() => {
-    void refreshDevices(setPlugins, setMidiInputs, setAudioOutputs)
+    void refreshDevices(setMidiInputs, setAudioOutputs)
   }, [])
 
   // Initial status pull + subscribe to changes. The pull catches the
@@ -67,38 +97,34 @@ function EnginePanelInner() {
     }
   }, [])
 
-  // Default selections once the device lists arrive — pick the first
-  // plugin, first MIDI input, default audio output. Keeps Start usable
-  // with one click instead of three.
+  // Auto-pick the first hardware MIDI input if one's available — keeps
+  // Start one-click for users with a controller. Users without one stay
+  // on "__none__" and play via the on-screen keyboard.
   useEffect(() => {
-    if (!pluginKey && plugins.length > 0) {
-      setPluginKey(pluginKeyOf(plugins[0]))
-    }
-  }, [plugins, pluginKey])
-  useEffect(() => {
-    if (!midiInput && midiInputs.length > 0) {
+    if (midiInput === "__none__" && midiInputs.length > 0) {
       setMidiInput(midiInputs[0].name)
     }
   }, [midiInputs, midiInput])
 
-  const selectedPlugin = plugins.find((p) => pluginKeyOf(p) === pluginKey)
   const canStart =
     !pending &&
-    selectedPlugin != null &&
-    midiInput !== "" &&
+    currentPatch != null &&
+    pluginChoice != null &&
     status.kind !== "running"
   const canStop = !pending && status.kind === "running"
 
   async function start() {
-    if (!selectedPlugin) return
+    if (!currentPatch) return
     setPending(true)
+    setStartError(undefined)
     try {
-      await engineStart({
-        bundlePath: selectedPlugin.bundlePath,
-        pluginId: selectedPlugin.id,
-        midiInput,
+      await engineStartFromPatch({
+        patch: currentPatch,
+        midiInput: midiInput === "__none__" ? null : midiInput,
         audioOutput: audioOutput === "__default__" ? null : audioOutput,
       })
+    } catch (e) {
+      setStartError(asEngineStartError(e))
     } finally {
       setPending(false)
     }
@@ -120,27 +146,19 @@ function EnginePanelInner() {
           Engine
         </span>
 
-        <select
-          className="rounded border bg-background px-2 py-1 text-xs"
-          value={pluginKey}
-          onChange={(e) => setPluginKey(e.target.value)}
-          disabled={status.kind === "running"}
-        >
-          {plugins.length === 0 && <option value="">No CLAP plugins found</option>}
-          {plugins.map((p) => (
-            <option key={pluginKeyOf(p)} value={pluginKeyOf(p)}>
-              {p.name} — {p.vendor}
-            </option>
-          ))}
-        </select>
+        <PatchPluginChip
+          patchName={currentPatch?.name}
+          pluginName={pluginChoice?.pluginName}
+        />
 
         <select
           className="rounded border bg-background px-2 py-1 text-xs"
           value={midiInput}
           onChange={(e) => setMidiInput(e.target.value)}
           disabled={status.kind === "running"}
+          title="MIDI input device. Pick 'On-screen keyboard only' to play from the Preview tab."
         >
-          {midiInputs.length === 0 && <option value="">No MIDI inputs</option>}
+          <option value="__none__">On-screen keyboard only</option>
           {midiInputs.map((m) => (
             <option key={m.name} value={m.name}>
               {m.name}
@@ -163,7 +181,18 @@ function EnginePanelInner() {
           ))}
         </select>
 
-        <Button size="sm" onClick={start} disabled={!canStart}>
+        <Button
+          size="sm"
+          onClick={start}
+          disabled={!canStart}
+          title={
+            !currentPatch
+              ? "No patch selected"
+              : !pluginChoice
+                ? "Pick a plugin on the instrument node in the patch editor"
+                : undefined
+          }
+        >
           Start
         </Button>
         <Button size="sm" variant="outline" onClick={stop} disabled={!canStop}>
@@ -172,7 +201,10 @@ function EnginePanelInner() {
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => void refreshDevices(setPlugins, setMidiInputs, setAudioOutputs)}
+          onClick={() => {
+            void refreshDevices(setMidiInputs, setAudioOutputs)
+            void refreshPluginScan()
+          }}
           disabled={status.kind === "running"}
           title="Re-scan plugins + devices"
         >
@@ -180,14 +212,49 @@ function EnginePanelInner() {
         </Button>
 
         <div className="ml-auto">
-          <StatusLine status={status} />
+          <StatusLine status={status} startError={startError} />
         </div>
       </div>
     </div>
   )
 }
 
-function StatusLine({ status }: { status: EngineStatus }) {
+function PatchPluginChip({
+  patchName,
+  pluginName,
+}: {
+  patchName: string | undefined
+  pluginName: string | undefined
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded border bg-background px-2 py-1 text-xs">
+      <span className="text-muted-foreground">Patch:</span>
+      <span className="font-medium">{patchName ?? "—"}</span>
+      <span className="text-muted-foreground">·</span>
+      <span className="text-muted-foreground">Plugin:</span>
+      <span
+        className={pluginName ? "font-medium" : "italic text-muted-foreground"}
+      >
+        {pluginName ?? "none"}
+      </span>
+    </div>
+  )
+}
+
+function StatusLine({
+  status,
+  startError,
+}: {
+  status: EngineStatus
+  startError: EngineStartError | undefined
+}) {
+  if (startError) {
+    return (
+      <span className="text-xs text-destructive">
+        {describeStartError(startError)}
+      </span>
+    )
+  }
   if (status.kind === "idle") {
     return <span className="text-xs text-muted-foreground">Idle</span>
   }
@@ -212,23 +279,25 @@ function StatusLine({ status }: { status: EngineStatus }) {
   )
 }
 
-function pluginKeyOf(p: ClapPluginInfo): string {
-  // bundle path + plugin id uniquely identifies a plugin (a bundle can
-  // expose multiple descriptors).
-  return `${p.bundlePath}::${p.id}`
+function describeStartError(e: EngineStartError): string {
+  switch (e.kind) {
+    case "noInstrumentNode":
+      return "This patch has no instrument node. Add one in the editor."
+    case "missingPluginConfig":
+      return `Pick a plugin on "${e.node}" in the patch editor.`
+    case "engine":
+      return `Engine: ${e.message}`
+  }
 }
 
 async function refreshDevices(
-  setPlugins: (p: ClapPluginInfo[]) => void,
   setMidi: (m: MidiInputInfo[]) => void,
   setAudio: (a: AudioOutputInfo[]) => void,
 ) {
-  const [scan, midi, audio] = await Promise.all([
-    listClapPlugins(),
+  const [midi, audio] = await Promise.all([
     listMidiInputs(),
     listAudioOutputs(),
   ])
-  setPlugins(scan.plugins)
   setMidi(midi)
   setAudio(audio)
 }

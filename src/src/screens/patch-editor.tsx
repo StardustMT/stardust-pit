@@ -43,7 +43,19 @@ import type {
   PatchGraph,
   Wire,
 } from "@/components/patch-graph/_types"
-import { CLASS_COLORS, classOf } from "@/components/patch-graph/_types"
+import {
+  CLASS_COLORS,
+  classOf,
+  getPluginChoice,
+} from "@/components/patch-graph/_types"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { usePluginScan } from "@/lib/use-plugin-scan"
 import { cn } from "@/lib/utils"
 
 /**
@@ -762,6 +774,20 @@ export function PatchEditor({
     }))
   }
 
+  /**
+   * Patch the `config` bag on a single node. Used by per-kind editors
+   * (e.g. the instrument.plugin picker) to write a small set of keys
+   * without clobbering anything else stored under `config`.
+   */
+  const setNodeConfig = (nodeId: string, patch: Record<string, unknown>) => {
+    setGraph((g) => ({
+      ...g,
+      nodes: g.nodes.map((n) =>
+        n.id !== nodeId ? n : { ...n, config: { ...(n.config ?? {}), ...patch } }
+      ),
+    }))
+  }
+
   const toggleSolo = (id: string) => {
     setSoloed((s) => {
       const next = new Set(s)
@@ -950,6 +976,7 @@ export function PatchEditor({
           onResizeZone={resizeZone}
           onSetZoneColor={setZoneColor}
           onSetZoneWireFollows={setZoneWireFollows}
+          onSetNodeConfig={setNodeConfig}
         />
       ),
     },
@@ -1149,6 +1176,7 @@ function SettingsTab({
   onResizeZone,
   onSetZoneColor,
   onSetZoneWireFollows,
+  onSetNodeConfig,
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
@@ -1182,6 +1210,7 @@ function SettingsTab({
   ) => void
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
+  onSetNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void
 }) {
   return (
     <div className="flex h-full flex-col gap-3">
@@ -1202,6 +1231,7 @@ function SettingsTab({
             onResizeZone={onResizeZone}
             onSetZoneColor={onSetZoneColor}
             onSetZoneWireFollows={onSetZoneWireFollows}
+            onSetNodeConfig={onSetNodeConfig}
           />
         ) : selectedComposite ? (
           <CompositeSettings
@@ -1387,6 +1417,7 @@ function NodeSettings({
   onResizeZone,
   onSetZoneColor,
   onSetZoneWireFollows,
+  onSetNodeConfig,
 }: {
   node: GraphNode
   onDelete: () => void
@@ -1399,6 +1430,7 @@ function NodeSettings({
   ) => void
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
+  onSetNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void
 }) {
   const isPlugin = node.kind === "instrument.plugin"
   return (
@@ -1456,7 +1488,10 @@ function NodeSettings({
       </div>
       <div className="min-w-0">
         {isPlugin ? (
-          <PluginUIDock node={node} />
+          <PluginUIDock
+            node={node}
+            onPick={(choice) => onSetNodeConfig(node.id, choice)}
+          />
         ) : (
           <KindConfig
             node={node}
@@ -1486,29 +1521,108 @@ function noteNameFor(midi: number): string {
   return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
 }
 
-function PluginUIDock({ node }: { node: GraphNode }) {
-  const uri = (node.config?.pluginUri as string | undefined) ?? "Surge XT"
-  const preset = (node.config?.preset as string | undefined) ?? "Init"
+/**
+ * The right pane of the Settings tab when an `instrument.plugin` node is
+ * selected. Picks which installed CLAP plugin this node represents — the
+ * picker writes `{ bundlePath, pluginId, pluginName, pluginVendor }` back
+ * onto the node config via `onPick`. The engine reads those fields from
+ * the active patch when the user hits Start.
+ *
+ * Preset / param controls below the picker are still placeholders — they
+ * become real once the engine grows per-plugin state plumbing. The intent
+ * was to wire the picker in v0.7 and leave the rest for later.
+ */
+function PluginUIDock({
+  node,
+  onPick,
+}: {
+  node: GraphNode
+  onPick: (choice: {
+    bundlePath: string
+    pluginId: string
+    pluginName: string
+    pluginVendor: string
+  }) => void
+}) {
+  const { plugins, loading, error, refresh } = usePluginScan()
+  const current = getPluginChoice(node)
+  const value = current ? `${current.bundlePath}::${current.pluginId}` : ""
+
+  const onValueChange = (next: string) => {
+    const p = plugins.find((p) => `${p.bundlePath}::${p.id}` === next)
+    if (!p) return
+    onPick({
+      bundlePath: p.bundlePath,
+      pluginId: p.id,
+      pluginName: p.name,
+      pluginVendor: p.vendor,
+    })
+  }
+
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Plugin
         </div>
-        <span className="rounded-sm bg-muted/40 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-          {uri}
-        </span>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading}
+          className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+          title="Re-scan installed CLAP plugins"
+        >
+          {loading ? "Scanning…" : "Refresh"}
+        </button>
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <SettingRow label="Preset" value={preset} />
-        <SettingRow label="Bank" value="Factory · Brass" />
-        <SettingRow label="Polyphony" value="16" />
-        <SettingRow label="MIDI channel" value="Omni" />
-      </div>
+
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue
+            placeholder={
+              loading
+                ? "Scanning plugins…"
+                : plugins.length === 0
+                  ? "No CLAP plugins found"
+                  : "— pick a plugin —"
+            }
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {plugins.map((p) => (
+            <SelectItem
+              key={`${p.bundlePath}::${p.id}`}
+              value={`${p.bundlePath}::${p.id}`}
+              className="text-xs"
+            >
+              <span className="font-medium">{p.name}</span>
+              <span className="ml-2 text-muted-foreground">{p.vendor}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {error && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
+          Plugin scan failed: {error}
+        </div>
+      )}
+
+      {current ? (
+        <div className="grid grid-cols-2 gap-1.5">
+          <SettingRow label="Vendor" value={current.pluginVendor ?? "—"} />
+          <SettingRow label="Plugin id" value={current.pluginId} />
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed bg-muted/20 px-3 py-3 text-center text-[11px] text-muted-foreground">
+          Pick a plugin to make this node playable.
+        </div>
+      )}
+
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Quick params
       </div>
-      <div className="flex items-stretch gap-3 rounded-md border bg-background px-3 py-2">
+      <div className="flex items-stretch gap-3 rounded-md border bg-background px-3 py-2 opacity-60">
         <ParamKnob label="Cutoff" value={0.62} />
         <ParamKnob label="Reso" value={0.34} />
         <ParamKnob label="Drive" value={0.18} />
@@ -1517,7 +1631,8 @@ function PluginUIDock({ node }: { node: GraphNode }) {
       </div>
       <button
         type="button"
-        className="mt-auto flex items-center justify-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[11px] font-medium hover:bg-muted/40"
+        disabled={!current}
+        className="mt-auto flex items-center justify-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-[11px] font-medium hover:bg-muted/40 disabled:opacity-50"
       >
         <Settings className="size-3" />
         Open full plugin UI

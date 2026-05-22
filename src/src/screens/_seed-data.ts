@@ -75,10 +75,8 @@ export function transposedSplitPatchGraph(): PatchGraph {
   transpose.config = { semitones: -12 }
   const bass = makeNode("instrument.plugin", { x: 720, y: 100 })
   bass.name = "Bass synth"
-  bass.config = { pluginUri: "Surge XT", preset: "MS-20 Bass" }
   const lead = makeNode("instrument.plugin", { x: 720, y: 400 })
   lead.name = "Lead synth"
-  lead.config = { pluginUri: "Surge XT", preset: "Modern Brass" }
   const mix = makeNode("audio.mix", { x: 1060, y: 260 })
   mix.name = "Sum"
   const out = makeNode("sink.main-out", { x: 1400, y: 260 })
@@ -106,7 +104,6 @@ export function pianoWithSendsPatchGraph(): PatchGraph {
   sustain.name = "Sustain"
   const piano = makeNode("instrument.plugin", { x: 460, y: 260 })
   piano.name = "Piano"
-  piano.config = { pluginUri: "Surge XT", preset: "Felt Piano" }
   const eq = makeNode("audio.eq", { x: 820, y: 140 })
   eq.name = "EQ"
   eq.config = { low: 2, mid: -1, high: 3 }
@@ -142,7 +139,6 @@ export function compositeBlockPatchGraph(): PatchGraph {
   expression.name = "Leslie speed pedal"
   const organ = makeNode("instrument.plugin", { x: 520, y: 220 })
   organ.name = "B3 organ"
-  organ.config = { pluginUri: "Surge XT", preset: "Tonewheel" }
   // Leslie sim has BOTH an audio chain and a MIDI control input (for the
   // expression pedal driving rotation speed).
   const leslie = makeNode("audio.eq", { x: 840, y: 220 })

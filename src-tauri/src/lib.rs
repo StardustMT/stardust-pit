@@ -22,11 +22,10 @@ pub fn run() {
             commands::list_clap_plugins,
             commands::list_midi_inputs,
             commands::list_audio_outputs,
-            commands::engine_start,
+            commands::engine_start_from_patch,
+            commands::engine_send_midi,
             commands::engine_stop,
             commands::engine_status,
-            commands::load_patch,
-            commands::save_patch,
             commands::load_show,
             commands::save_show,
         ])

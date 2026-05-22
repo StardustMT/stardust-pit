@@ -1,6 +1,7 @@
 import * as React from "react"
 import { CircleDot, Eye, Footprints, Move3D, MoveVertical, Sliders } from "lucide-react"
 import { Keyboard, type KeyboardZone } from "@/components/rig/keyboard"
+import { engineSendMidi, isTauri } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import { classOf, CLASS_COLORS, type CompositeBlock, type GraphNode, type PatchGraph } from "./_types"
 
@@ -163,9 +164,27 @@ function KeyboardPreview({
             onResizeZone?.(keyboard.id, zoneId, range)
           }
           labelOctaves
+          onNoteOn={isTauri() ? sendNoteOn : undefined}
+          onNoteOff={isTauri() ? sendNoteOff : undefined}
         />
       </div>
     </div>
+  )
+}
+
+/**
+ * Fire-and-forget MIDI bridge for the on-screen keyboard. The engine
+ * silently drops notes when it isn't running, so we don't gate on engine
+ * status here — playing while idle just produces nothing audible.
+ */
+function sendNoteOn(note: number, velocity: number) {
+  void engineSendMidi({ kind: "noteOn", channel: 0, note, velocity }).catch(
+    () => undefined,
+  )
+}
+function sendNoteOff(note: number) {
+  void engineSendMidi({ kind: "noteOff", channel: 0, note, velocity: 0 }).catch(
+    () => undefined,
   )
 }
 

@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { GraphNode } from "./_types"
-import { classOf, CLASS_COLORS } from "./_types"
+import { classOf, CLASS_COLORS, getPluginChoice } from "./_types"
 
 /**
  * Per-kind body renderer. POC pass: simple icon + descriptive line for
@@ -172,19 +172,23 @@ function MixBody({ count, signal }: { count: number; signal: "midi" | "audio" })
 // =============================================================================
 
 function PluginBody({ node }: { node: GraphNode }) {
-  const preset = (node.config?.preset as string | undefined) ?? "Init"
+  const choice = getPluginChoice(node)
   return (
     <div className="flex flex-col items-stretch gap-1 px-1 py-1.5">
       <button
         type="button"
         className="flex h-6 items-center justify-center gap-1 rounded border bg-card text-[10px] font-medium hover:bg-muted/40"
+        disabled={!choice}
+        title={choice ? "Open plugin UI" : "Pick a plugin first"}
       >
         <Settings2 className="size-3" />
         Open UI
       </button>
       <div className="flex items-baseline justify-between gap-1 px-1 text-[10px]">
-        <span className="text-muted-foreground">Preset</span>
-        <span className="truncate font-mono text-foreground">{preset}</span>
+        <span className="text-muted-foreground">Vendor</span>
+        <span className="truncate font-mono text-foreground">
+          {choice?.pluginVendor ?? "—"}
+        </span>
       </div>
     </div>
   )
@@ -313,7 +317,7 @@ export function PluginChip({ name }: { name: string | undefined }) {
 
 export function pluginChipName(node: GraphNode): string | undefined {
   if (node.kind === "instrument.plugin") {
-    return (node.config?.pluginUri as string | undefined) ?? undefined
+    return getPluginChoice(node)?.pluginName
   }
   if (node.kind === "instrument.sine") return "built-in"
   return undefined

@@ -55,6 +55,15 @@ export interface KeyboardProps {
   modValue?: number
   /** Configured bend range in semitones (e.g. 2 for ±2). Display-only. */
   bendRangeSemitones?: number
+  /**
+   * When set, the keyboard becomes a clickable MIDI source: pointer-down
+   * on a key fires `onNoteOn`, pointer-up / leave / cancel fires
+   * `onNoteOff`. Mainstage-style "no hardware, no problem" affordance.
+   */
+  onNoteOn?: (note: number, velocity: number) => void
+  onNoteOff?: (note: number) => void
+  /** Fixed velocity used for click-to-play. Default 100. */
+  playVelocity?: number
   className?: string
 }
 
@@ -123,9 +132,111 @@ export function Keyboard({
   pitchValue = 0,
   modValue = 0,
   bendRangeSemitones = 2,
+  onNoteOn,
+  onNoteOff,
+  playVelocity = 100,
   className,
 }: KeyboardProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null)
+
+  // Click-and-drag MIDI playback.
+  //
+  // We deliberately do NOT use `setPointerCapture` on a key — that locks
+  // every subsequent event to the original element, so dragging across
+  // other keys never reaches them and the cursor's actual position is
+  // ignored. Instead we hit-test via `document.elementFromPoint` on each
+  // pointermove, swap notes when the cursor crosses a key boundary, and
+  // rely on window-level pointerup/cancel/blur listeners to guarantee a
+  // release even if the user lifts the mouse outside the keyboard.
+  const playable = !!onNoteOn
+  const dragRef = React.useRef<{ pointerId: number; lastNote: number | null } | null>(null)
+  // Self-tracked held notes for click/touch play. Surfaces as a state
+  // Set so re-rendering can show the depressed-key look without making
+  // the parent thread press/release back through the `active` prop.
+  const [selfPressed, setSelfPressed] = React.useState<Set<number>>(() => new Set())
+
+  const pressNote = React.useCallback(
+    (midi: number) => {
+      setSelfPressed((prev) => {
+        if (prev.has(midi)) return prev
+        const next = new Set(prev)
+        next.add(midi)
+        return next
+      })
+      onNoteOn?.(midi, playVelocity)
+    },
+    [onNoteOn, playVelocity],
+  )
+  const releaseNote = React.useCallback(
+    (midi: number) => {
+      setSelfPressed((prev) => {
+        if (!prev.has(midi)) return prev
+        const next = new Set(prev)
+        next.delete(midi)
+        return next
+      })
+      onNoteOff?.(midi)
+    },
+    [onNoteOff],
+  )
+  const releaseAll = React.useCallback(() => {
+    setSelfPressed((prev) => {
+      if (prev.size === 0) return prev
+      for (const n of prev) onNoteOff?.(n)
+      return new Set()
+    })
+  }, [onNoteOff])
+
+  const noteFromPoint = React.useCallback(
+    (clientX: number, clientY: number): number | null => {
+      const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+      const carrier = el?.closest("[data-note]") as HTMLElement | null
+      if (!carrier) return null
+      const raw = carrier.getAttribute("data-note")
+      if (!raw) return null
+      const midi = Number(raw)
+      return Number.isFinite(midi) ? midi : null
+    },
+    [],
+  )
+
+  React.useEffect(() => {
+    if (!playable) return
+
+    const endDrag = () => {
+      dragRef.current = null
+      releaseAll()
+    }
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current
+      if (!drag || drag.pointerId !== e.pointerId) return
+      const next = noteFromPoint(e.clientX, e.clientY)
+      if (next === drag.lastNote) return
+      if (drag.lastNote != null) releaseNote(drag.lastNote)
+      if (next != null) pressNote(next)
+      drag.lastNote = next
+    }
+
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", endDrag)
+    window.addEventListener("pointercancel", endDrag)
+    window.addEventListener("blur", endDrag)
+    return () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", endDrag)
+      window.removeEventListener("pointercancel", endDrag)
+      window.removeEventListener("blur", endDrag)
+      releaseAll()
+    }
+  }, [playable, noteFromPoint, pressNote, releaseNote, releaseAll])
+
+  const startDrag = React.useCallback(
+    (midi: number, pointerId: number) => {
+      dragRef.current = { pointerId, lastNote: midi }
+      pressNote(midi)
+    },
+    [pressNote],
+  )
 
   const whiteKeys = React.useMemo(() => {
     const out: number[] = []
@@ -218,7 +329,8 @@ export function Keyboard({
             <div className="relative flex h-28 items-end">
               {whiteKeys.map((midi) => {
                 const noteEvent = activeByNote.get(midi)
-                const isActive = !!noteEvent
+                const isPressed = selfPressed.has(midi)
+                const isActive = !!noteEvent || isPressed
                 const zoneColor = noteEvent?.zoneId ? zoneById.get(noteEvent.zoneId)?.color : null
                 const accent = zoneColor ?? "var(--primary)"
                 const isCStart = midi % 12 === 0
@@ -228,20 +340,36 @@ export function Keyboard({
                     key={midi}
                     data-note={midi}
                     data-active={isActive || undefined}
-                    className="relative flex h-full shrink-0 flex-col items-center justify-end rounded-b-md border-l border-r border-b border-neutral-300 text-[10px] font-medium text-neutral-600 transition-colors first:rounded-bl-lg last:rounded-br-lg"
+                    className={cn(
+                      "relative flex h-full shrink-0 flex-col items-center justify-end rounded-b-md border-l border-r border-b border-neutral-300 text-[10px] font-medium text-neutral-600 transition-[transform,box-shadow] duration-75 first:rounded-bl-lg last:rounded-br-lg",
+                      playable && "cursor-pointer",
+                    )}
                     style={{
                       width: whiteKeyWidth,
                       background: isActive
                         ? `linear-gradient(180deg, color-mix(in oklch, ${accent} 35%, white) 0%, ${accent} 100%)`
                         : "linear-gradient(180deg, #fbfbf8 0%, #ebebe6 92%, #d8d8d2 100%)",
+                      // Depressed look when active: lose the bottom 3D
+                      // step, add an inner top-edge shadow so the key
+                      // appears to have sunk into its slot. Translate
+                      // 1.5px down on top of that for tactile feedback.
                       boxShadow: isActive
-                        ? `inset 0 0 12px color-mix(in oklch, ${accent} 60%, transparent), 0 -1px 0 0 ${accent} inset`
+                        ? `inset 0 3px 4px rgba(0,0,0,0.25), inset 0 0 12px color-mix(in oklch, ${accent} 50%, transparent), 0 -1px 0 0 ${accent} inset`
                         : "inset 0 -3px 4px -2px rgba(0,0,0,0.18)",
+                      transform: isActive ? "translateY(1.5px)" : undefined,
                       color: isActive ? "white" : undefined,
                       borderLeftColor: isCStart ? "rgba(0,0,0,0.18)" : undefined,
                       borderLeftWidth: isCStart ? 2 : 1,
                       opacity: zones && zones.length > 0 ? (inAnyZone ? 1 : 0.55) : 1,
                     }}
+                    onPointerDown={
+                      playable
+                        ? (e) => {
+                            e.preventDefault()
+                            startDrag(midi, e.pointerId)
+                          }
+                        : undefined
+                    }
                   >
                     {labelOctaves && isCStart && (
                       <span className="pb-1 font-mono">C{octaveOf(midi)}</span>
@@ -260,7 +388,8 @@ export function Keyboard({
                     <div key={i} className="shrink-0" style={{ width: whiteKeyWidth }} />
                   )
                   const noteEvent = activeByNote.get(blackMidi)
-                  const isActive = !!noteEvent
+                  const isPressed = selfPressed.has(blackMidi)
+                  const isActive = !!noteEvent || isPressed
                   const zoneColor = noteEvent?.zoneId
                     ? zoneById.get(noteEvent.zoneId)?.color
                     : null
@@ -274,16 +403,30 @@ export function Keyboard({
                       <div
                         data-note={blackMidi}
                         data-active={isActive || undefined}
-                        className="absolute -right-[18%] top-0 z-10 h-16 w-[36%] rounded-b-md transition-colors"
+                        className={cn(
+                          "absolute -right-[18%] top-0 z-10 h-16 w-[36%] rounded-b-md transition-[transform,box-shadow] duration-75",
+                          playable && "pointer-events-auto cursor-pointer",
+                        )}
                         style={{
                           background: isActive
                             ? `linear-gradient(180deg, color-mix(in oklch, ${accent} 60%, black) 0%, ${accent} 100%)`
                             : "linear-gradient(180deg, #2a2a2a 0%, #0c0c0c 75%, #1a1a1a 100%)",
+                          // Pressed black keys lose their drop shadow
+                          // (since they've sunk) and gain a top inset.
                           boxShadow: isActive
-                            ? `0 4px 8px color-mix(in oklch, ${accent} 40%, transparent), inset 0 -2px 0 ${accent}`
+                            ? `inset 0 2px 3px rgba(0,0,0,0.6), inset 0 -2px 0 ${accent}`
                             : "0 3px 6px rgba(0,0,0,0.5), inset 0 -3px 0 #050505",
+                          transform: isActive ? "translateY(1px)" : undefined,
                           border: isActive ? `1px solid ${accent}` : "1px solid #000",
                         }}
+                        onPointerDown={
+                          playable
+                            ? (e) => {
+                                e.preventDefault()
+                                startDrag(blackMidi, e.pointerId)
+                              }
+                            : undefined
+                        }
                       />
                     </div>
                   )

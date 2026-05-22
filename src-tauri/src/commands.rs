@@ -20,9 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 use stardust_core::audio;
-use stardust_core::midi;
-use stardust_core::patch::{PatchDocument, ValidationError};
-use stardust_core::show::{ShowDocument, ShowValidationError};
+use stardust_core::midi::{self, MidiMessage};
+use stardust_core::show::{NodeKind, Patch, ShowDocument, ShowValidationError};
 use stardust_core::plugin::clap;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -207,31 +206,113 @@ pub async fn list_audio_outputs(
 // `PluginInstance<H>` is `!Send`. These commands forward intent to that
 // thread; the UI hears about state changes via the `engine://status`
 // Tauri event, and can pull the current snapshot via `engine_status`.
+//
+// The Start command takes a full `Patch` from the show store (graph +
+// meta) rather than a flat bundle/plugin id pair: per v0.7 the engine
+// is patch-driven, and we walk the graph here to locate the first
+// `instrument.plugin` node and lift its plugin choice into the engine's
+// `StartConfig`. Multi-plugin chains are a follow-up.
 // =============================================================================
 
-/// What the UI sends with `engine_start`. Names come from
-/// `list_clap_plugins` / `list_midi_inputs` / `list_audio_outputs`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EngineStartArgs {
-    pub bundle_path: String,
-    pub plugin_id: String,
-    pub midi_input: String,
-    /// `null` → host default output device.
-    pub audio_output: Option<String>,
+/// Why `engine_start_from_patch` couldn't bring a patch online. Structured
+/// so the UI can render each failure case meaningfully — "this patch has
+/// no instrument node" vs. "the instrument node has no plugin chosen yet"
+/// vs. a raw engine failure (audio/MIDI/CLAP load).
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum EngineStartError {
+    /// Patch graph has zero `instrument.plugin` nodes.
+    NoInstrumentNode,
+    /// First instrument node has empty / missing bundle path + plugin id.
+    /// `node` is the human-friendly name so the UI can point at it.
+    MissingPluginConfig { node: String },
+    /// The engine command channel rejected the send.
+    Engine { message: String },
 }
 
+/// Start the engine from the active patch. `midi_input = None` runs with
+/// no hardware MIDI input — the engine still hosts and audibly plays
+/// whatever the on-screen keyboard injects via `engine_send_midi`.
 #[tauri::command]
-pub fn engine_start(
-    args: EngineStartArgs,
+pub fn engine_start_from_patch(
+    patch: Patch,
+    midi_input: Option<String>,
+    audio_output: Option<String>,
+    engine: State<'_, EngineHandle>,
+) -> Result<(), EngineStartError> {
+    let instrument = patch
+        .graph
+        .nodes
+        .iter()
+        .find(|n| n.kind == NodeKind::InstrumentPlugin)
+        .ok_or(EngineStartError::NoInstrumentNode)?;
+
+    let (bundle_path, plugin_id) = extract_plugin_choice(&instrument.config)
+        .ok_or_else(|| EngineStartError::MissingPluginConfig {
+            node: instrument.name.clone(),
+        })?;
+
+    engine
+        .send(EngineCommand::Start(StartConfig {
+            bundle_path: bundle_path.into(),
+            plugin_id,
+            midi_input,
+            audio_output,
+        }))
+        .map_err(|message| EngineStartError::Engine { message })
+}
+
+/// Fire-and-forget: push one MIDI message from a UI source (the on-screen
+/// keyboard, today) into the running engine. Silently no-ops when the
+/// engine isn't running — the UI is expected to gate its keyboard on the
+/// engine's status, but a stray event isn't an error.
+#[tauri::command]
+pub fn engine_send_midi(
+    msg: UiMidiMessage,
     engine: State<'_, EngineHandle>,
 ) -> Result<(), String> {
-    engine.send(EngineCommand::Start(StartConfig {
-        bundle_path: args.bundle_path.into(),
-        plugin_id: args.plugin_id,
-        midi_input: args.midi_input,
-        audio_output: args.audio_output,
-    }))
+    engine.send(EngineCommand::SendMidi(msg.into()))
+}
+
+/// Wire shape the UI sends for a single MIDI event. Tagged on `kind` so we
+/// can grow it (cc, pitch bend) without churning the Rust enum mapping.
+/// Velocity-zero note-on collapses to note-off via `MidiMessage::from_bytes`
+/// — here we accept what the UI sends and let the engine do its thing.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum UiMidiMessage {
+    NoteOn { channel: u8, note: u8, velocity: u8 },
+    NoteOff { channel: u8, note: u8, velocity: u8 },
+}
+
+impl From<UiMidiMessage> for MidiMessage {
+    fn from(m: UiMidiMessage) -> Self {
+        match m {
+            UiMidiMessage::NoteOn { channel, note, velocity } => MidiMessage::NoteOn {
+                channel: channel & 0x0F,
+                note: note & 0x7F,
+                velocity: velocity & 0x7F,
+            },
+            UiMidiMessage::NoteOff { channel, note, velocity } => MidiMessage::NoteOff {
+                channel: channel & 0x0F,
+                note: note & 0x7F,
+                velocity: velocity & 0x7F,
+            },
+        }
+    }
+}
+
+/// Pull `{ bundlePath, pluginId }` out of an `instrument.plugin` node's
+/// free-form config bag. The TS picker writes both keys atomically, but
+/// either can be missing / empty if the user hasn't picked yet.
+fn extract_plugin_choice(config: &Option<serde_json::Value>) -> Option<(String, String)> {
+    let obj = config.as_ref()?.as_object()?;
+    let bundle_path = obj.get("bundlePath")?.as_str()?;
+    let plugin_id = obj.get("pluginId")?.as_str()?;
+    if bundle_path.is_empty() || plugin_id.is_empty() {
+        return None;
+    }
+    Some((bundle_path.to_string(), plugin_id.to_string()))
 }
 
 #[tauri::command]
@@ -242,51 +323,6 @@ pub fn engine_stop(engine: State<'_, EngineHandle>) -> Result<(), String> {
 #[tauri::command]
 pub fn engine_status(engine: State<'_, EngineHandle>) -> EngineStatus {
     engine.snapshot()
-}
-
-// =============================================================================
-// Patch document load/save
-//
-// Pure JSON ↔ struct conversions; file I/O is owned by the UI side via
-// `tauri-plugin-fs` + `tauri-plugin-dialog`. Errors are structured (not
-// stringly-typed like the discovery commands) because a malformed patch can
-// fail in two qualitatively different ways and the UI wants to render them
-// differently: a single parse message vs. a list of structural validation
-// errors the user can walk through.
-// =============================================================================
-
-/// Why a patch document couldn't be loaded or saved.
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum PatchError {
-    /// The JSON was malformed, not a stardust patch, or from a newer schema
-    /// version than this build understands.
-    Parse { message: String },
-    /// The document parsed cleanly but the graph failed structural validation
-    /// (per ADR-0004). `validate` collects every error so the UI can show all
-    /// problems at once instead of fail-fast.
-    Validation { errors: Vec<ValidationError> },
-}
-
-#[tauri::command]
-pub fn load_patch(json: String) -> Result<PatchDocument, PatchError> {
-    let doc = PatchDocument::from_json(&json).map_err(|e| PatchError::Parse {
-        message: e.to_string(),
-    })?;
-    doc.graph
-        .validate()
-        .map_err(|errors| PatchError::Validation { errors })?;
-    Ok(doc)
-}
-
-#[tauri::command]
-pub fn save_patch(doc: PatchDocument) -> Result<String, PatchError> {
-    doc.graph
-        .validate()
-        .map_err(|errors| PatchError::Validation { errors })?;
-    doc.to_json_pretty().map_err(|e| PatchError::Parse {
-        message: e.to_string(),
-    })
 }
 
 // =============================================================================

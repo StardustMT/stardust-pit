@@ -74,14 +74,6 @@ export function listAudioOutputs(): Promise<AudioOutputInfo[]> {
 // Engine (plugin host)
 // =============================================================================
 
-export interface EngineStartArgs {
-  bundlePath: string
-  pluginId: string
-  midiInput: string
-  /** `null` → use the host's default audio output. */
-  audioOutput: string | null
-}
-
 /**
  * Mirror of `engine::EngineStatus`. Tagged on `kind`; everything else
  * is only present in `running` / `error`.
@@ -92,7 +84,8 @@ export type EngineStatus =
       kind: "running"
       pluginName: string
       pluginId: string
-      midiInput: string
+      /** `null` when running with no hardware MIDI — UI source only. */
+      midiInput: string | null
       audioOutput: string
       sampleRate: number
       channels: number
@@ -101,8 +94,46 @@ export type EngineStatus =
     }
   | { kind: "error"; message: string }
 
-export function engineStart(args: EngineStartArgs): Promise<void> {
-  return invoke<void>("engine_start", { args })
+/**
+ * Mirror of `commands::EngineStartError`. Distinguishes "patch has no
+ * instrument" / "instrument has no plugin chosen" / "engine refused" so
+ * the UI can point the user at the right fix.
+ */
+export type EngineStartError =
+  | { kind: "noInstrumentNode" }
+  | { kind: "missingPluginConfig"; node: string }
+  | { kind: "engine"; message: string }
+
+/**
+ * Start the engine from the currently-selected patch. The Rust side walks
+ * the patch graph to find the first `instrument.plugin` node and lifts
+ * its `bundlePath` / `pluginId` into the engine's `StartConfig`.
+ */
+export function engineStartFromPatch(args: {
+  patch: PatchWire
+  midiInput: string
+  audioOutput: string | null
+}): Promise<void> {
+  return invoke<void>("engine_start_from_patch", args)
+}
+
+/** `.catch(asEngineStartError)` to get a typed error instead of `unknown`. */
+export function asEngineStartError(e: unknown): EngineStartError {
+  if (e && typeof e === "object" && "kind" in e) return e as EngineStartError
+  return { kind: "engine", message: String(e) }
+}
+
+/**
+ * One MIDI message from a UI source (on-screen keyboard). Fire-and-forget:
+ * the Rust side silently no-ops when the engine isn't running, so callers
+ * don't need to gate on status before sending.
+ */
+export type UiMidiMessage =
+  | { kind: "noteOn"; channel: number; note: number; velocity: number }
+  | { kind: "noteOff"; channel: number; note: number; velocity: number }
+
+export function engineSendMidi(msg: UiMidiMessage): Promise<void> {
+  return invoke<void>("engine_send_midi", { msg })
 }
 
 export function engineStop(): Promise<void> {

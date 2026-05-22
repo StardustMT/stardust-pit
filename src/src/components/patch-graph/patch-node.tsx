@@ -2,7 +2,14 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { NodeBody } from "./node-body"
 import { typeLabelFor } from "./_catalog"
-import { CLASS_COLORS, classOf, SIGNAL_DEFAULT_COLORS, type GraphNode, type Port } from "./_types"
+import {
+  CLASS_COLORS,
+  classOf,
+  getPluginChoice,
+  SIGNAL_DEFAULT_COLORS,
+  type GraphNode,
+  type Port,
+} from "./_types"
 
 /** Base / minimum width. Nodes grow to fit a wider type-label or wider body. */
 export const NODE_MIN_WIDTH = 220
@@ -304,8 +311,8 @@ export function PatchNode({
 
 function headerTypeLabel(node: GraphNode): string {
   if (node.kind === "instrument.plugin") {
-    const uri = node.config?.pluginUri as string | undefined
-    if (uri) return uri
+    const choice = getPluginChoice(node)
+    if (choice?.pluginName) return choice.pluginName
   }
   return typeLabelFor(node.kind)
 }

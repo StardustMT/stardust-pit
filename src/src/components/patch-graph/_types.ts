@@ -181,6 +181,41 @@ export function emptyGraph(): PatchGraph {
 }
 
 // =============================================================================
+// instrument.plugin config
+//
+// `GraphNode.config` is intentionally a free-form bag (per ADR-0004); these
+// helpers narrow it for the one kind that the engine actually consumes today.
+// The bundle path + plugin id are what `engine_start_from_patch` looks for;
+// the cached name/vendor are for UI rendering so we don't have to re-scan
+// `list_clap_plugins` just to show a label.
+// =============================================================================
+
+export interface PluginChoice {
+  bundlePath: string
+  pluginId: string
+  pluginName?: string
+  pluginVendor?: string
+}
+
+/**
+ * Read the plugin choice off an `instrument.plugin` node. Returns
+ * `undefined` for any other node kind, or when the node hasn't had a
+ * plugin picked yet (empty bundle / id).
+ */
+export function getPluginChoice(node: GraphNode): PluginChoice | undefined {
+  if (node.kind !== "instrument.plugin") return undefined
+  const cfg = node.config
+  if (!cfg) return undefined
+  const bundlePath = cfg.bundlePath
+  const pluginId = cfg.pluginId
+  if (typeof bundlePath !== "string" || bundlePath === "") return undefined
+  if (typeof pluginId !== "string" || pluginId === "") return undefined
+  const pluginName = typeof cfg.pluginName === "string" ? cfg.pluginName : undefined
+  const pluginVendor = typeof cfg.pluginVendor === "string" ? cfg.pluginVendor : undefined
+  return { bundlePath, pluginId, pluginName, pluginVendor }
+}
+
+// =============================================================================
 // Visual palette per class (shared between node header + wire defaults)
 // =============================================================================
 
