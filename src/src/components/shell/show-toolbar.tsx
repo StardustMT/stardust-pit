@@ -40,9 +40,7 @@ export function ShowToolbar() {
 
   const confirmDiscardIfDirty = (): boolean => {
     if (!dirty) return true
-    return window.confirm(
-      "You have unsaved changes. Discard them and start a new show?",
-    )
+    return window.confirm("You have unsaved changes. Discard them and start a new show?")
   }
 
   const onNew = () => {
@@ -106,23 +104,11 @@ export function ShowToolbar() {
           <FilePlus className="size-3.5" />
           New Show
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onOpen}
-          disabled={busy}
-          className="gap-1.5"
-        >
+        <Button size="sm" variant="ghost" onClick={onOpen} disabled={busy} className="gap-1.5">
           <FolderOpen className="size-3.5" />
           Open Show
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onSave}
-          disabled={busy}
-          className="gap-1.5"
-        >
+        <Button size="sm" variant="ghost" onClick={onSave} disabled={busy} className="gap-1.5">
           <Save className="size-3.5" />
           Save Show
         </Button>
@@ -159,15 +145,9 @@ function ShowErrorDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="size-4 text-amber-500" />
-            {error?.kind === "validation"
-              ? "Show has structural problems"
-              : "Couldn't load show"}
+            {error?.kind === "validation" ? "Show has structural problems" : "Couldn't load show"}
           </DialogTitle>
-          {path && (
-            <DialogDescription className="font-mono text-[11px]">
-              {path}
-            </DialogDescription>
-          )}
+          {path && <DialogDescription className="font-mono text-[11px]">{path}</DialogDescription>}
         </DialogHeader>
         <div className="max-h-[50vh] overflow-auto text-xs">
           {error?.kind === "parse" && (
@@ -211,8 +191,8 @@ function formatShowValidationError(e: ShowValidationError): React.ReactNode {
     case "duplicatePatchId":
       return (
         <>
-          Duplicate patch id <code className="font-mono">{e.id}</code> (patch
-          ids must be unique across the entire show)
+          Duplicate patch id <code className="font-mono">{e.id}</code> (patch ids must be unique
+          across the entire show)
         </>
       )
     case "duplicateBlockId":
@@ -226,8 +206,7 @@ function formatShowValidationError(e: ShowValidationError): React.ReactNode {
         <>
           <div className="font-semibold">
             Patch <code className="font-mono">{e.patch}</code> (in song{" "}
-            <code className="font-mono">{e.song}</code>) has{" "}
-            {e.errors.length} structural{" "}
+            <code className="font-mono">{e.song}</code>) has {e.errors.length} structural{" "}
             {e.errors.length === 1 ? "error" : "errors"}:
           </div>
           <ul className="mt-1 list-disc pl-5 text-[11px] text-muted-foreground">

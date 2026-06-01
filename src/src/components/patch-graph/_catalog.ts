@@ -32,81 +32,63 @@ export const NODE_CATALOG: NodeSpec[] = [
     class: "source",
     label: "Keyboard",
     description: "Piano keyboard. Add zone outs in settings to split the range.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.pads",
     class: "source",
     label: "Pads",
     description: "Grid of pads. Add per-pad outs in settings.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.switch",
     class: "source",
     label: "Switch",
     description: "Generic footswitch or button.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.sustain-pedal",
     class: "source",
     label: "Sustain pedal",
     description: "Sustain footswitch — typically CC 64.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.expression-pedal",
     class: "source",
     label: "Expression pedal",
     description: "Continuous foot pedal.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.pitch-wheel",
     class: "source",
     label: "Pitch wheel",
     description: "Spring-loaded pitch bend wheel.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.mod-wheel",
     class: "source",
     label: "Mod wheel",
     description: "Continuous wheel — typically CC 1.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.knob",
     class: "source",
     label: "Knob",
     description: "Rotary control.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
   {
     kind: "source.fader",
     class: "source",
     label: "Fader",
     description: "Linear control.",
-    defaultPorts: () => [
-      { id: "out", label: "MIDI out", signal: "midi", direction: "out" },
-    ],
+    defaultPorts: () => [{ id: "out", label: "MIDI out", signal: "midi", direction: "out" }],
   },
 
   // -------------------------------------------------------------------------
@@ -145,8 +127,20 @@ export const NODE_CATALOG: NodeSpec[] = [
     description: "Load a CLAP or VST3 instrument plugin.",
     defaultPorts: () => [
       { id: "midi-in", label: "MIDI in", signal: "midi", direction: "in" },
-      { id: "audio-l", label: "Audio L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
-      { id: "audio-r", label: "Audio R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
+      {
+        id: "audio-l",
+        label: "Audio L",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "audio-r",
+        label: "Audio R",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "R" },
+      },
     ],
     // Picker writes { bundlePath, pluginId, pluginName, pluginVendor } once
     // the user chooses a plugin. Empty default = "no plugin picked yet".
@@ -159,8 +153,20 @@ export const NODE_CATALOG: NodeSpec[] = [
     description: "Polyphonic sine synth with ADSR. Useful for testing.",
     defaultPorts: () => [
       { id: "midi-in", label: "MIDI in", signal: "midi", direction: "in" },
-      { id: "audio-l", label: "Audio L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
-      { id: "audio-r", label: "Audio R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
+      {
+        id: "audio-l",
+        label: "Audio L",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "audio-r",
+        label: "Audio R",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "R" },
+      },
     ],
     defaultConfig: () => ({ polyphony: 8 }),
   },
@@ -174,10 +180,34 @@ export const NODE_CATALOG: NodeSpec[] = [
     label: "EQ",
     description: "3-band equalizer. Stereo in / stereo out.",
     defaultPorts: () => [
-      { id: "in-l", label: "In L", signal: "audio", direction: "in", config: { kind: "stereo", channel: "L" } },
-      { id: "in-r", label: "In R", signal: "audio", direction: "in", config: { kind: "stereo", channel: "R" } },
-      { id: "out-l", label: "Out L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
-      { id: "out-r", label: "Out R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
+      {
+        id: "in-l",
+        label: "In L",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "in-r",
+        label: "In R",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "R" },
+      },
+      {
+        id: "out-l",
+        label: "Out L",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "out-r",
+        label: "Out R",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "R" },
+      },
     ],
     defaultConfig: () => ({ low: 0, mid: 0, high: 0 }),
   },
@@ -187,12 +217,48 @@ export const NODE_CATALOG: NodeSpec[] = [
     label: "Audio mix",
     description: "Sum multiple audio streams. Add input pairs in settings.",
     defaultPorts: () => [
-      { id: "in-1-l", label: "1 L", signal: "audio", direction: "in", config: { kind: "stereo", channel: "L" } },
-      { id: "in-1-r", label: "1 R", signal: "audio", direction: "in", config: { kind: "stereo", channel: "R" } },
-      { id: "in-2-l", label: "2 L", signal: "audio", direction: "in", config: { kind: "stereo", channel: "L" } },
-      { id: "in-2-r", label: "2 R", signal: "audio", direction: "in", config: { kind: "stereo", channel: "R" } },
-      { id: "out-l", label: "Out L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
-      { id: "out-r", label: "Out R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
+      {
+        id: "in-1-l",
+        label: "1 L",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "in-1-r",
+        label: "1 R",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "R" },
+      },
+      {
+        id: "in-2-l",
+        label: "2 L",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "in-2-r",
+        label: "2 R",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "R" },
+      },
+      {
+        id: "out-l",
+        label: "Out L",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "out-r",
+        label: "Out R",
+        signal: "audio",
+        direction: "out",
+        config: { kind: "stereo", channel: "R" },
+      },
     ],
   },
 
@@ -205,8 +271,20 @@ export const NODE_CATALOG: NodeSpec[] = [
     label: "Main output",
     description: "Routes to the show's primary audio output.",
     defaultPorts: () => [
-      { id: "in-l", label: "In L", signal: "audio", direction: "in", config: { kind: "stereo", channel: "L" } },
-      { id: "in-r", label: "In R", signal: "audio", direction: "in", config: { kind: "stereo", channel: "R" } },
+      {
+        id: "in-l",
+        label: "In L",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "L" },
+      },
+      {
+        id: "in-r",
+        label: "In R",
+        signal: "audio",
+        direction: "in",
+        config: { kind: "stereo", channel: "R" },
+      },
     ],
   },
 ]
@@ -231,7 +309,7 @@ let nextId = 1
 export function makeNode(
   kind: NodeKind,
   position: { x: number; y: number },
-  overrides?: { name?: string; config?: Record<string, unknown> }
+  overrides?: { name?: string; config?: Record<string, unknown> },
 ): GraphNode {
   const spec = findSpec(kind)
   if (!spec) throw new Error(`Unknown node kind: ${kind}`)

@@ -1,5 +1,21 @@
 import type { SoundBlock } from "@/components/sound/sound-flow"
-import type { Sound } from "@/screens/patch-editor"
+
+interface Sound {
+  id: string
+  name: string
+  color: string
+  source: {
+    deviceId: string
+    channel: number
+    range: { fromNote: number; toNote: number }
+    padIndices?: number[]
+  }
+  blocks: SoundBlock[]
+  level?: number
+  linkedPresetId?: string
+  outputBus?: string
+  midiOut?: { deviceId: string; channel: number }
+}
 
 // =============================================================================
 // Little Shop of Horrors (1982, off-Broadway). The canonical Keys-2 book
@@ -203,7 +219,7 @@ export const LSOH_KEYBOARDS: RigKeyboard[] = [
     name: "Novation Launchkey 49",
     shortName: "Launchkey",
     fromNote: 36, // C2
-    toNote: 84,   // C6
+    toNote: 84, // C6
     defaultChannel: 2,
     stackOrder: 0, // top
     bendRangeSemitones: 2,
@@ -214,8 +230,8 @@ export const LSOH_KEYBOARDS: RigKeyboard[] = [
     id: "rd2000",
     name: "Roland RD-2000",
     shortName: "RD-2000",
-    fromNote: 21,  // A0
-    toNote: 108,   // C8
+    fromNote: 21, // A0
+    toNote: 108, // C8
     defaultChannel: 1,
     stackOrder: 1, // bottom
     bendRangeSemitones: 2,

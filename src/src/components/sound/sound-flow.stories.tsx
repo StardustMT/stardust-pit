@@ -40,8 +40,22 @@ export const InstrumentPlusEffects: Story = {
       blocks={[
         { kind: "instrument", id: "diva", name: "Diva", vendor: "u-he", format: "VST3", cpu: 0.18 },
         { kind: "effect", id: "eq", name: "EQ", format: "built-in" },
-        { kind: "effect", id: "reverb", name: "Valhalla Supermassive", vendor: "Valhalla DSP", format: "VST3", cpu: 0.04 },
-        { kind: "effect", id: "limit", name: "Pro-L 2", vendor: "FabFilter", format: "VST3", cpu: 0.02 },
+        {
+          kind: "effect",
+          id: "reverb",
+          name: "Valhalla Supermassive",
+          vendor: "Valhalla DSP",
+          format: "VST3",
+          cpu: 0.04,
+        },
+        {
+          kind: "effect",
+          id: "limit",
+          name: "Pro-L 2",
+          vendor: "FabFilter",
+          format: "VST3",
+          cpu: 0.02,
+        },
       ]}
     />
   ),
@@ -55,8 +69,22 @@ export const Advanced: Story = {
       blocks={[
         { kind: "instrument", id: "diva", name: "Diva", vendor: "u-he", format: "VST3", cpu: 0.18 },
         { kind: "effect", id: "eq", name: "EQ", format: "built-in" },
-        { kind: "effect", id: "reverb", name: "Valhalla Supermassive", vendor: "Valhalla DSP", format: "VST3", cpu: 0.04 },
-        { kind: "effect", id: "limit", name: "Pro-L 2", vendor: "FabFilter", format: "VST3", cpu: 0.02 },
+        {
+          kind: "effect",
+          id: "reverb",
+          name: "Valhalla Supermassive",
+          vendor: "Valhalla DSP",
+          format: "VST3",
+          cpu: 0.04,
+        },
+        {
+          kind: "effect",
+          id: "limit",
+          name: "Pro-L 2",
+          vendor: "FabFilter",
+          format: "VST3",
+          cpu: 0.02,
+        },
       ]}
     />
   ),
@@ -67,8 +95,22 @@ export const Layered: Story = {
   render: () => (
     <Demo
       blocks={[
-        { kind: "instrument", id: "low", name: "B3 — drawbars 88 8000 000", vendor: "GG Audio", format: "VST3", cpu: 0.06 },
-        { kind: "instrument", id: "high", name: "B3 — perc 3rd", vendor: "GG Audio", format: "VST3", cpu: 0.03 },
+        {
+          kind: "instrument",
+          id: "low",
+          name: "B3 — drawbars 88 8000 000",
+          vendor: "GG Audio",
+          format: "VST3",
+          cpu: 0.06,
+        },
+        {
+          kind: "instrument",
+          id: "high",
+          name: "B3 — perc 3rd",
+          vendor: "GG Audio",
+          format: "VST3",
+          cpu: 0.03,
+        },
         { kind: "effect", id: "leslie", name: "Leslie", format: "built-in" },
       ]}
     />

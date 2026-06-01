@@ -3,7 +3,13 @@ import { CircleDot, Eye, Footprints, Move3D, MoveVertical, Sliders } from "lucid
 import { Keyboard, type KeyboardZone } from "@/components/rig/keyboard"
 import { engineSendMidi, isTauri } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
-import { classOf, CLASS_COLORS, type CompositeBlock, type GraphNode, type PatchGraph } from "./_types"
+import {
+  classOf,
+  CLASS_COLORS,
+  type CompositeBlock,
+  type GraphNode,
+  type PatchGraph,
+} from "./_types"
 
 export interface LivePreviewProps {
   graph: PatchGraph
@@ -11,7 +17,7 @@ export interface LivePreviewProps {
   onResizeZone?: (
     nodeId: string,
     portId: string,
-    range: { fromNote: number; toNote: number }
+    range: { fromNote: number; toNote: number },
   ) => void
 }
 
@@ -21,11 +27,7 @@ export interface LivePreviewProps {
  * controllers shows up immediately. Zone colours/labels follow the wire
  * chain DOWNSTREAM through MIDI processors to the eventual instrument.
  */
-export function LivePreview({
-  graph,
-  patchName,
-  onResizeZone,
-}: LivePreviewProps) {
+export function LivePreview({ graph, patchName, onResizeZone }: LivePreviewProps) {
   const sources = graph.nodes.filter((n) => classOf(n.kind) === "source")
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = React.useState(800)
@@ -106,7 +108,7 @@ function KeyboardPreview({
 
   const zones = React.useMemo<KeyboardZone[]>(() => {
     const zonePorts = keyboard.ports.filter(
-      (p) => p.direction === "out" && p.config?.kind === "zone"
+      (p) => p.direction === "out" && p.config?.kind === "zone",
     )
     if (zonePorts.length === 0) {
       const single = keyboard.ports.find((p) => p.direction === "out")
@@ -133,9 +135,7 @@ function KeyboardPreview({
       // Zone's own colour wins over the downstream target's. The user
       // picked it on purpose; we respect it.
       const color =
-        typeof cfg.colorHue === "number"
-          ? `oklch(0.7 0.18 ${cfg.colorHue})`
-          : zoneColor(r)
+        typeof cfg.colorHue === "number" ? `oklch(0.7 0.18 ${cfg.colorHue})` : zoneColor(r)
       return {
         id: p.id,
         label: r?.displayName ?? p.label,
@@ -160,9 +160,7 @@ function KeyboardPreview({
           toNote={toNote}
           whiteKeyWidth={whiteKeyWidth}
           zones={zones}
-          onZoneChange={(zoneId, range) =>
-            onResizeZone?.(keyboard.id, zoneId, range)
-          }
+          onZoneChange={(zoneId, range) => onResizeZone?.(keyboard.id, zoneId, range)}
           labelOctaves
           onNoteOn={isTauri() ? sendNoteOn : undefined}
           onNoteOff={isTauri() ? sendNoteOff : undefined}
@@ -178,14 +176,10 @@ function KeyboardPreview({
  * status here — playing while idle just produces nothing audible.
  */
 function sendNoteOn(note: number, velocity: number) {
-  void engineSendMidi({ kind: "noteOn", channel: 0, note, velocity }).catch(
-    () => undefined,
-  )
+  void engineSendMidi({ kind: "noteOn", channel: 0, note, velocity }).catch(() => undefined)
 }
 function sendNoteOff(note: number) {
-  void engineSendMidi({ kind: "noteOff", channel: 0, note, velocity: 0 }).catch(
-    () => undefined,
-  )
+  void engineSendMidi({ kind: "noteOff", channel: 0, note, velocity: 0 }).catch(() => undefined)
 }
 
 function ControllerTile({ graph, node }: { graph: PatchGraph; node: GraphNode }) {
@@ -197,7 +191,7 @@ function ControllerTile({ graph, node }: { graph: PatchGraph; node: GraphNode })
     <div
       className={cn(
         "flex w-24 flex-col items-center gap-2 rounded-md border bg-card px-3 py-3",
-        target ? "border-primary/30" : "border-dashed"
+        target ? "border-primary/30" : "border-dashed",
       )}
     >
       <Icon className="size-6 text-muted-foreground" />
@@ -258,7 +252,7 @@ interface DownstreamTarget {
 function findDownstreamTarget(
   graph: PatchGraph,
   fromNode: string,
-  fromPort: string
+  fromPort: string,
 ): DownstreamTarget | null {
   const visited = new Set<string>()
   type Q = {
@@ -276,7 +270,7 @@ function findDownstreamTarget(
     visited.add(key)
 
     const outgoing = graph.wires.filter(
-      (w) => w.fromNode === cur.nodeId && w.fromPort === cur.portId
+      (w) => w.fromNode === cur.nodeId && w.fromPort === cur.portId,
     )
     for (const w of outgoing) {
       const r = visitTarget(graph, w.toNode, w.toPort, cur.enteringComposite)
@@ -313,7 +307,7 @@ function visitTarget(
   graph: PatchGraph,
   ownerId: string,
   portId: string,
-  enteringComposite: CompositeBlock | undefined
+  enteringComposite: CompositeBlock | undefined,
 ): {
   instrument?: GraphNode
   enteringComposite?: CompositeBlock

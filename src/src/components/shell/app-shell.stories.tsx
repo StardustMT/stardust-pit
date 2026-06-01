@@ -1,10 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import * as React from "react"
-import {
-  AppShellFrame,
-  InspectorFrame,
-  Placeholder,
-} from "./app-shell-frame"
+import { AppShellFrame, InspectorFrame, Placeholder } from "./app-shell-frame"
 import type { AppMode } from "./nav-rail"
 
 const meta: Meta = {
@@ -32,10 +28,7 @@ export const Empty: Story = {
         showName="Untitled Show"
         songName="—"
         contextPanel={
-          <Placeholder
-            title="Context panel"
-            body="Show outline lives here in real usage."
-          />
+          <Placeholder title="Context panel" body="Show outline lives here in real usage." />
         }
         inspector={
           <InspectorFrame>

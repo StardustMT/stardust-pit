@@ -18,9 +18,7 @@ export const Default: Story = {
         <CardTitle>Spitfire BBC SO Discover</CardTitle>
         <CardDescription>VST3 · 412 MB sample library · Active in 3 patches</CardDescription>
       </CardHeader>
-      <CardContent className="text-sm">
-        Loaded successfully. No quarantine warnings.
-      </CardContent>
+      <CardContent className="text-sm">Loaded successfully. No quarantine warnings.</CardContent>
       <CardFooter className="gap-2">
         <Button variant="outline">Open editor</Button>
         <Button variant="ghost">Remove</Button>

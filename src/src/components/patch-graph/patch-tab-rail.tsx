@@ -68,7 +68,7 @@ export function PatchTabRail({
     <div
       className={cn(
         "flex h-9 items-stretch gap-px border-y bg-muted/40 px-2",
-        side === "top" ? "border-t-0" : "border-b-0"
+        side === "top" ? "border-t-0" : "border-b-0",
       )}
     >
       {tabs.map((t) => {
@@ -83,7 +83,7 @@ export function PatchTabRail({
               "border-x border-transparent",
               active
                 ? "border-x-border bg-background text-foreground"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <span>{t.label}</span>
@@ -105,16 +105,12 @@ export function PatchTabRail({
             onClick={() => setPinned((p) => !p)}
             className={cn(
               "grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground",
-              pinned && "text-primary"
+              pinned && "text-primary",
             )}
             title={pinned ? "Unpin (collapse on tab toggle)" : "Pin open"}
             aria-label={pinned ? "Unpin tab rail" : "Pin tab rail"}
           >
-            {pinned ? (
-              <PinOff className="size-3.5" />
-            ) : (
-              <Pin className="size-3.5" />
-            )}
+            {pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
           </button>
           <button
             type="button"
@@ -135,18 +131,19 @@ export function PatchTabRail({
   )
 
   // Content panel — rendered only when a tab is open.
-  const contentEl = expanded && openTab ? (
-    <div
-      className="overflow-hidden border-y bg-background"
-      style={{
-        height: expandedHeight,
-        borderTop: side === "top" ? "none" : undefined,
-        borderBottom: side === "bottom" ? "none" : undefined,
-      }}
-    >
-      <div className="h-full overflow-auto p-3">{openTab.content}</div>
-    </div>
-  ) : null
+  const contentEl =
+    expanded && openTab ? (
+      <div
+        className="overflow-hidden border-y bg-background"
+        style={{
+          height: expandedHeight,
+          borderTop: side === "top" ? "none" : undefined,
+          borderBottom: side === "bottom" ? "none" : undefined,
+        }}
+      >
+        <div className="h-full overflow-auto p-3">{openTab.content}</div>
+      </div>
+    ) : null
 
   // For top: rail above content. For bottom: content above rail.
   return (

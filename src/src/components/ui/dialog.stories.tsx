@@ -25,8 +25,8 @@ export const Default: Story = {
         <DialogHeader>
           <DialogTitle>Quarantine plugin?</DialogTitle>
           <DialogDescription>
-            Surge XT crashed twice this session. Quarantining will skip it for the rest of the
-            show; you can re-enable from the plugin browser.
+            Surge XT crashed twice this session. Quarantining will skip it for the rest of the show;
+            you can re-enable from the plugin browser.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

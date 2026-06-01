@@ -68,10 +68,7 @@ export function NodeLibraryPanel({
   }, [])
 
   return (
-    <Tabs
-      defaultValue="base"
-      className="flex h-full flex-col rounded-xl border bg-card"
-    >
+    <Tabs defaultValue="base" className="flex h-full flex-col rounded-xl border bg-card">
       <div className="border-b px-3 pt-3">
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Node library
@@ -86,28 +83,17 @@ export function NodeLibraryPanel({
         </TabsList>
       </div>
 
-      <TabsContent
-        value="base"
-        className="min-h-0 flex-1 overflow-hidden p-3"
-      >
+      <TabsContent value="base" className="min-h-0 flex-1 overflow-hidden p-3">
         <ScrollArea className="-mr-2 h-full pr-2">
           <div className="flex flex-col gap-4">
             {grouped.map(({ cls, items }) => (
-              <ClassSection
-                key={cls}
-                cls={cls}
-                items={items}
-                onAddNode={onAddNode}
-              />
+              <ClassSection key={cls} cls={cls} items={items} onAddNode={onAddNode} />
             ))}
           </div>
         </ScrollArea>
       </TabsContent>
 
-      <TabsContent
-        value="my-blocks"
-        className="min-h-0 flex-1 overflow-hidden p-3"
-      >
+      <TabsContent value="my-blocks" className="min-h-0 flex-1 overflow-hidden p-3">
         {savedComposites.length === 0 ? (
           <div className="grid h-full place-items-center px-4 text-center text-xs text-muted-foreground">
             <div>
@@ -116,7 +102,8 @@ export function NodeLibraryPanel({
               <div className="mt-1">
                 Select a region on the canvas and choose
                 <br />
-                <span className="font-mono text-foreground">Wrap as composite</span> to save a chain.
+                <span className="font-mono text-foreground">Wrap as composite</span> to save a
+                chain.
               </div>
             </div>
           </div>
@@ -176,24 +163,14 @@ function ClassSection({
       </div>
       <div className="flex flex-col gap-1">
         {items.map((spec) => (
-          <NodeLibraryCard
-            key={spec.kind}
-            spec={spec}
-            onAdd={() => onAddNode?.(spec.kind)}
-          />
+          <NodeLibraryCard key={spec.kind} spec={spec} onAdd={() => onAddNode?.(spec.kind)} />
         ))}
       </div>
     </div>
   )
 }
 
-function NodeLibraryCard({
-  spec,
-  onAdd,
-}: {
-  spec: NodeSpec
-  onAdd?: () => void
-}) {
+function NodeLibraryCard({ spec, onAdd }: { spec: NodeSpec; onAdd?: () => void }) {
   const Icon = iconFor(spec.kind)
   const palette = CLASS_COLORS[spec.class]
   return (
@@ -202,7 +179,7 @@ function NodeLibraryCard({
       onClick={onAdd}
       className={cn(
         "group flex w-full items-center gap-3 rounded-md border bg-card px-2.5 py-2 text-left transition-colors",
-        "hover:border-primary/50 hover:bg-muted/40"
+        "hover:border-primary/50 hover:bg-muted/40",
       )}
     >
       <div
@@ -217,9 +194,7 @@ function NodeLibraryCard({
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs font-semibold">{spec.label}</div>
-        <div className="truncate text-[10px] text-muted-foreground/80">
-          {spec.description}
-        </div>
+        <div className="truncate text-[10px] text-muted-foreground/80">{spec.description}</div>
       </div>
       <span className="grid size-6 shrink-0 place-items-center text-muted-foreground group-hover:text-primary">
         <Plus className="size-3" />

@@ -53,10 +53,7 @@ export function AppShellFrame({
     function onMove(e: PointerEvent) {
       if (!draggingRef.current) return
       const dx = startXRef.current - e.clientX
-      const next = Math.min(
-        MAX_INSPECTOR,
-        Math.max(MIN_INSPECTOR, startWRef.current + dx),
-      )
+      const next = Math.min(MAX_INSPECTOR, Math.max(MIN_INSPECTOR, startWRef.current + dx))
       setInspectorWidth(next)
     }
     function onUp() {
@@ -192,13 +189,7 @@ export function LiveFullscreen({
  * Lightweight wrapper for inspector content. Keeps the optional label
  * for legacy stories; new code can omit the label entirely.
  */
-export function InspectorFrame({
-  label,
-  children,
-}: {
-  label?: string
-  children: React.ReactNode
-}) {
+export function InspectorFrame({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col gap-2">
       {label && (

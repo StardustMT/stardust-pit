@@ -12,18 +12,12 @@ export const Mixed: StoryObj<typeof CueEditorRow> = {
   name: "Cue list (Song view)",
   render: () => (
     <div className="w-[640px] space-y-2">
-      <CueEditorRow
-        trigger={{ type: "footswitch", switch: "FS1" }}
-        action={{ type: "advance" }}
-      />
+      <CueEditorRow trigger={{ type: "footswitch", switch: "FS1" }} action={{ type: "advance" }} />
       <CueEditorRow
         trigger={{ type: "midi-note", channel: 1, note: "C2" }}
         action={{ type: "jump", patch: "Patch 3 — Strings" }}
       />
-      <CueEditorRow
-        trigger={{ type: "bar", bar: 33 }}
-        action={{ type: "tempo", bpm: 168 }}
-      />
+      <CueEditorRow trigger={{ type: "bar", bar: 33 }} action={{ type: "tempo", bpm: 168 }} />
       <CueEditorRow
         trigger={{ type: "midi-cc", channel: 16, cc: 100 }}
         action={{ type: "panic" }}

@@ -170,9 +170,7 @@ export function engineStatus(): Promise<EngineStatus> {
  * event per state transition (Idle → Running, Stop, errors) plus
  * periodic updates while running if the dropped-event counter ticks.
  */
-export function onEngineStatus(
-  cb: (s: EngineStatus) => void,
-): Promise<UnlistenFn> {
+export function onEngineStatus(cb: (s: EngineStatus) => void): Promise<UnlistenFn> {
   return listen<EngineStatus>("engine://status", (e) => cb(e.payload))
 }
 

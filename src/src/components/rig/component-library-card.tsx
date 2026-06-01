@@ -48,7 +48,7 @@ export function ComponentLibraryCard({ spec, onAdd }: ComponentLibraryCardProps)
       onClick={onAdd}
       className={cn(
         "group flex w-full items-center gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors",
-        "hover:border-primary/50 hover:bg-muted/40"
+        "hover:border-primary/50 hover:bg-muted/40",
       )}
     >
       <div className="grid size-9 shrink-0 place-items-center rounded-md border bg-muted/40 text-muted-foreground group-hover:text-foreground">
@@ -56,9 +56,7 @@ export function ComponentLibraryCard({ spec, onAdd }: ComponentLibraryCardProps)
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-xs font-semibold">{spec.label}</div>
-        <div className="truncate text-[10px] text-muted-foreground/80">
-          {spec.description}
-        </div>
+        <div className="truncate text-[10px] text-muted-foreground/80">{spec.description}</div>
       </div>
       <span className="grid size-7 shrink-0 place-items-center text-muted-foreground group-hover:text-primary">
         <Plus className="size-3.5" />

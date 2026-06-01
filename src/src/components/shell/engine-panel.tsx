@@ -233,9 +233,7 @@ function PatchChip({
       <span className="text-muted-foreground">Patch:</span>
       <span className="font-medium">{patchName ?? "—"}</span>
       <span className="text-muted-foreground">·</span>
-      <span
-        className={signature ? "font-medium" : "italic text-muted-foreground"}
-      >
+      <span className={signature ? "font-medium" : "italic text-muted-foreground"}>
         {signature ? "ready" : "no instruments"}
       </span>
     </div>
@@ -250,21 +248,14 @@ function StatusLine({
   syncError: EngineStartError | undefined
 }) {
   if (syncError) {
-    return (
-      <span className="text-xs text-destructive">
-        {describeStartError(syncError)}
-      </span>
-    )
+    return <span className="text-xs text-destructive">{describeStartError(syncError)}</span>
   }
   if (status.kind === "idle") {
     return <span className="text-xs text-muted-foreground">Idle</span>
   }
   if (status.kind === "error") {
     return (
-      <span
-        className="text-xs text-destructive"
-        title={status.messages.join("\n")}
-      >
+      <span className="text-xs text-destructive" title={status.messages.join("\n")}>
         Error: {status.messages[0]}
         {status.messages.length > 1 && ` (+${status.messages.length - 1} more)`}
       </span>
@@ -277,13 +268,10 @@ function StatusLine({
       <NativeSummary counts={status.nativeNodes} />
       <span>
         {" "}
-        · {status.audioOutput} @ {status.sampleRate / 1000} kHz /{" "}
-        {status.channels}ch
+        · {status.audioOutput} @ {status.sampleRate / 1000} kHz / {status.channels}ch
       </span>
       {status.droppedEvents > 0 && (
-        <span className="ml-2 text-amber-600">
-          ⚠ {status.droppedEvents} dropped
-        </span>
+        <span className="ml-2 text-amber-600">⚠ {status.droppedEvents} dropped</span>
       )}
       {status.sampleRateMismatch && (
         <span className="ml-2 text-amber-600">⚠ sample-rate mismatch</span>
@@ -325,10 +313,7 @@ async function refreshDevices(
   setMidi: (m: MidiInputInfo[]) => void,
   setAudio: (a: AudioOutputInfo[]) => void,
 ) {
-  const [midi, audio] = await Promise.all([
-    listMidiInputs(),
-    listAudioOutputs(),
-  ])
+  const [midi, audio] = await Promise.all([listMidiInputs(), listAudioOutputs()])
   setMidi(midi)
   setAudio(audio)
 }

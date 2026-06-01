@@ -66,10 +66,7 @@ export function RightPanel({
   return (
     <Tabs
       defaultValue="library"
-      className={cn(
-        "flex h-full flex-col rounded-xl border bg-card",
-        className
-      )}
+      className={cn("flex h-full flex-col rounded-xl border bg-card", className)}
     >
       <div className="border-b px-2 pt-2">
         <TabsList className="grid h-8 grid-cols-2">
@@ -95,10 +92,7 @@ export function RightPanel({
 
       <TabsContent value="blocks" className="min-h-0 flex-1 overflow-hidden p-3">
         <ScrollArea className="-mr-2 h-full pr-2">
-          <BlocksContent
-            savedComposites={savedComposites}
-            onAddComposite={onAddComposite}
-          />
+          <BlocksContent savedComposites={savedComposites} onAddComposite={onAddComposite} />
         </ScrollArea>
       </TabsContent>
     </Tabs>
@@ -245,14 +239,11 @@ function LibraryContent({
                   draggable
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = "copy"
-                    e.dataTransfer.setData(
-                      "application/x-stardust-node-kind",
-                      item.kind
-                    )
+                    e.dataTransfer.setData("application/x-stardust-node-kind", item.kind)
                     if (item.overrides) {
                       e.dataTransfer.setData(
                         "application/x-stardust-node-overrides",
-                        JSON.stringify(item.overrides)
+                        JSON.stringify(item.overrides),
                       )
                     }
                     e.dataTransfer.setData("text/plain", item.label)
@@ -261,8 +252,7 @@ function LibraryContent({
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ")
-                      onAddNode?.(item.kind, item.overrides)
+                    if (e.key === "Enter" || e.key === " ") onAddNode?.(item.kind, item.overrides)
                   }}
                   className="group flex w-full cursor-grab items-center gap-3 rounded-md border bg-background px-2.5 py-2 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 active:cursor-grabbing"
                   title="Click to add at center, or drag onto the canvas"
@@ -331,9 +321,7 @@ function BlocksContent({
           <Box className="size-4 text-amber-500" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs font-semibold">{c.name}</div>
-            <div className="truncate text-[10px] text-muted-foreground/80">
-              {c.nodeCount} nodes
-            </div>
+            <div className="truncate text-[10px] text-muted-foreground/80">{c.nodeCount} nodes</div>
           </div>
           <Plus className="size-3 text-muted-foreground" />
         </button>

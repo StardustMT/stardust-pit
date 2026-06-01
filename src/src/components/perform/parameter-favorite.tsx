@@ -1,4 +1,3 @@
-import * as React from "react"
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 
@@ -35,17 +34,12 @@ export function ParameterFavorite({
 
   if (style === "knob") {
     return (
-      <div className={cn("flex flex-col items-center gap-2 rounded-lg border bg-card p-3", className)}>
+      <div
+        className={cn("flex flex-col items-center gap-2 rounded-lg border bg-card p-3", className)}
+      >
         <div className="relative size-16">
           <svg viewBox="0 0 64 64" className="size-full">
-            <circle
-              cx="32"
-              cy="32"
-              r="26"
-              fill="none"
-              stroke="var(--muted)"
-              strokeWidth="5"
-            />
+            <circle cx="32" cy="32" r="26" fill="none" stroke="var(--muted)" strokeWidth="5" />
             <circle
               cx="32"
               cy="32"

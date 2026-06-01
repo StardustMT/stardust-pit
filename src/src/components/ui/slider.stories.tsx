@@ -1,7 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import { Slider } from "./slider"
 
-const meta: Meta<typeof Slider> = { title: "UI/Slider", component: Slider, parameters: { layout: "centered" } }
+const meta: Meta<typeof Slider> = {
+  title: "UI/Slider",
+  component: Slider,
+  parameters: { layout: "centered" },
+}
 export default meta
 
 export const ParameterValue: StoryObj<typeof Slider> = {

@@ -2,17 +2,8 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { PatchNode, absolutePortPosition, nodeBounds } from "./patch-node"
 import { PatchWire } from "./patch-wire"
-import {
-  CompositeBlockFrame,
-  compositePortPosition,
-} from "./composite-block"
-import type {
-  CompositeBlock,
-  GraphNode,
-  NodeKind,
-  PatchGraph,
-  SignalKind,
-} from "./_types"
+import { CompositeBlockFrame, compositePortPosition } from "./composite-block"
+import type { CompositeBlock, GraphNode, NodeKind, PatchGraph, SignalKind, Wire } from "./_types"
 
 // =============================================================================
 // Drag types
@@ -77,16 +68,10 @@ export interface PatchCanvasProps {
   }) => void
   onDeleteWiresInto?: (nodeId: string, portId: string) => void
   /** Canvas blank-space menu. anchor = client coords; canvasPos = inner-canvas coords. */
-  onOpenCanvasMenu?: (
-    anchor: { x: number; y: number },
-    canvasPos: { x: number; y: number }
-  ) => void
+  onOpenCanvasMenu?: (anchor: { x: number; y: number }, canvasPos: { x: number; y: number }) => void
   onOpenNodeMenu?: (nodeId: string, anchor: { x: number; y: number }) => void
   onOpenWireMenu?: (wireId: string, anchor: { x: number; y: number }) => void
-  onOpenCompositeMenu?: (
-    compositeId: string,
-    anchor: { x: number; y: number }
-  ) => void
+  onOpenCompositeMenu?: (compositeId: string, anchor: { x: number; y: number }) => void
   /** Single-click on composite title chip — opens settings panel for it. */
   onSelectComposite?: (compositeId: string) => void
   /**
@@ -97,7 +82,7 @@ export interface PatchCanvasProps {
   onDropFromLibrary?: (
     kind: NodeKind,
     canvasPos: { x: number; y: number },
-    overrides?: { name?: string; config?: Record<string, unknown> }
+    overrides?: { name?: string; config?: Record<string, unknown> },
   ) => void
   /** Per-node validation status badges. */
   validation?: Map<string, { level: "warning" | "error"; message: string }>
@@ -161,7 +146,7 @@ export function PatchCanvas({
         y: (e.clientY - rect.top - view.panY) / view.zoom,
       }
     },
-    [view.panX, view.panY, view.zoom]
+    [view.panX, view.panY, view.zoom],
   )
 
   const nodeMap = React.useMemo(() => {
@@ -216,7 +201,7 @@ export function PatchCanvas({
       if (!pos || !port) return null
       return { ...pos, signal: port.signal }
     },
-    [compositeMap, nodeMap]
+    [compositeMap, nodeMap],
   )
 
   const connectedPorts = React.useMemo(() => {
@@ -352,9 +337,7 @@ export function PatchCanvas({
     setSmoothPan(false)
     const cs = toCanvasSpace(e)
     // If the dragged node is part of the selection, move the whole group.
-    const dragSet = selectedSet.has(nodeId)
-      ? new Set(selectedSet)
-      : new Set([nodeId])
+    const dragSet = selectedSet.has(nodeId) ? new Set(selectedSet) : new Set([nodeId])
     const offsets = new Map<string, { offsetX: number; offsetY: number }>()
     for (const id of dragSet) {
       const n = nodeMap.get(id)
@@ -366,23 +349,22 @@ export function PatchCanvas({
   }
 
   /** Drag the composite frame — moves every member node by the same delta. */
-  const onCompositeLabelPointerDown =
-    (compositeId: string) => (e: React.PointerEvent) => {
-      const comp = compositeMap.get(compositeId)
-      if (!comp) return
-      setSmoothPan(false)
-      const cs = toCanvasSpace(e)
-      const offsets = new Map<string, { offsetX: number; offsetY: number }>()
-      for (const n of comp.members) {
-        offsets.set(n.id, { offsetX: cs.x - n.x, offsetY: cs.y - n.y })
-      }
-      // Use the first member as the "primary" so existing nodeDrag drains
-      // the same way. Composite is just a multi-node drag in disguise.
-      const primary = comp.members[0]
-      if (!primary) return
-      onNodeDragStart?.()
-      setNodeDrag({ primaryNodeId: primary.id, offsets })
+  const onCompositeLabelPointerDown = (compositeId: string) => (e: React.PointerEvent) => {
+    const comp = compositeMap.get(compositeId)
+    if (!comp) return
+    setSmoothPan(false)
+    const cs = toCanvasSpace(e)
+    const offsets = new Map<string, { offsetX: number; offsetY: number }>()
+    for (const n of comp.members) {
+      offsets.set(n.id, { offsetX: cs.x - n.x, offsetY: cs.y - n.y })
     }
+    // Use the first member as the "primary" so existing nodeDrag drains
+    // the same way. Composite is just a multi-node drag in disguise.
+    const primary = comp.members[0]
+    if (!primary) return
+    onNodeDragStart?.()
+    setNodeDrag({ primaryNodeId: primary.id, offsets })
+  }
 
   // -------------------------------------------------------------------------
   // Drag-to-connect (outputs only)
@@ -393,7 +375,7 @@ export function PatchCanvas({
   /** Look up a port on either a node or a composite. */
   const lookupPort = (
     id: string,
-    portId: string
+    portId: string,
   ): { direction: "in" | "out"; signal: SignalKind } | null => {
     const comp = compositeMap.get(id)
     if (comp) {
@@ -406,11 +388,7 @@ export function PatchCanvas({
     return p ? { direction: p.direction, signal: p.signal } : null
   }
 
-  const onPortPointerDown = (
-    ownerId: string,
-    portId: string,
-    e: React.PointerEvent
-  ) => {
+  const onPortPointerDown = (ownerId: string, portId: string, e: React.PointerEvent) => {
     const port = lookupPort(ownerId, portId)
     if (!port) return
 
@@ -444,10 +422,7 @@ export function PatchCanvas({
 
   const onPortPointerLeave = (ownerId: string, portId: string) => {
     if (!wireDrag?.hovering) return
-    if (
-      wireDrag.hovering.nodeId === ownerId &&
-      wireDrag.hovering.portId === portId
-    ) {
+    if (wireDrag.hovering.nodeId === ownerId && wireDrag.hovering.portId === portId) {
       setWireDrag({ ...wireDrag, hovering: null })
     }
   }
@@ -545,9 +520,7 @@ export function PatchCanvas({
     if (!kind) return
     e.preventDefault()
     const cs = toCanvasSpace(e)
-    const overridesRaw = e.dataTransfer.getData(
-      "application/x-stardust-node-overrides"
-    )
+    const overridesRaw = e.dataTransfer.getData("application/x-stardust-node-overrides")
     let overrides: { name?: string; config?: Record<string, unknown> } | undefined
     if (overridesRaw) {
       try {
@@ -567,13 +540,9 @@ export function PatchCanvas({
   return (
     <div
       ref={surfaceRef}
-      className={cn(
-        "relative h-full w-full overflow-hidden bg-background",
-        className
-      )}
+      className={cn("relative h-full w-full overflow-hidden bg-background", className)}
       style={{
-        backgroundImage:
-          "radial-gradient(circle, var(--border) 1px, transparent 1px)",
+        backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)",
         backgroundSize: `${gridSize}px ${gridSize}px`,
         backgroundPosition: `${view.panX % gridSize}px ${view.panY % gridSize}px`,
       }}
@@ -613,18 +582,16 @@ export function PatchCanvas({
           clicks are detected via e.target === e.currentTarget. */}
       <div
         ref={innerRef}
-        className={cn(
-          "absolute left-0 top-0 origin-top-left",
-          panDrag && "cursor-grabbing"
-        )}
+        className={cn("absolute left-0 top-0 origin-top-left", panDrag && "cursor-grabbing")}
         style={{
           transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
           willChange: "transform",
           width: SURFACE_SIZE,
           height: SURFACE_SIZE,
-          transition: smoothPan && !panDrag && !nodeDrag
-            ? "transform 220ms cubic-bezier(0.4, 0, 0.2, 1)"
-            : undefined,
+          transition:
+            smoothPan && !panDrag && !nodeDrag
+              ? "transform 220ms cubic-bezier(0.4, 0, 0.2, 1)"
+              : undefined,
         }}
         onPointerDown={onInnerPointerDown}
         onContextMenu={(e) => {
@@ -638,9 +605,7 @@ export function PatchCanvas({
       >
         {/* Composite block frames */}
         {graph.composites.map((c) => {
-          const memberNodes = graph.nodes.filter((n) =>
-            c.contains.includes(n.id)
-          )
+          const memberNodes = graph.nodes.filter((n) => c.contains.includes(n.id))
           const cnxSet = connectedPorts.get(c.id)
           const connectedMap: Record<string, boolean> = {}
           if (cnxSet) for (const p of cnxSet) connectedMap[p] = true
@@ -654,9 +619,7 @@ export function PatchCanvas({
                 onSelect={onSelectComposite ? () => onSelectComposite(c.id) : undefined}
                 onLabelPointerDown={onCompositeLabelPointerDown(c.id)}
                 onOpenMenu={
-                  onOpenCompositeMenu
-                    ? (anchor) => onOpenCompositeMenu(c.id, anchor)
-                    : undefined
+                  onOpenCompositeMenu ? (anchor) => onOpenCompositeMenu(c.id, anchor) : undefined
                 }
                 onPortPointerDown={(portId, e) => onPortPointerDown(c.id, portId, e)}
                 onPortPointerEnter={(portId) => onPortPointerEnter(c.id, portId)}
@@ -689,17 +652,11 @@ export function PatchCanvas({
                   active={activeWireIds?.has(w.id)}
                   obstacles={obstacles}
                   onSelect={onSelectWire ? () => onSelectWire(w.id) : undefined}
-                  onOpenMenu={
-                    onOpenWireMenu
-                      ? (anchor) => onOpenWireMenu(w.id, anchor)
-                      : undefined
-                  }
+                  onOpenMenu={onOpenWireMenu ? (anchor) => onOpenWireMenu(w.id, anchor) : undefined}
                 />
               )
             })}
-            {wireDrag && (
-              <GhostWire drag={wireDrag} resolve={resolveEndpoint} />
-            )}
+            {wireDrag && <GhostWire drag={wireDrag} resolve={resolveEndpoint} />}
           </g>
         </svg>
 
@@ -710,12 +667,7 @@ export function PatchCanvas({
           if (cnxSet) for (const p of cnxSet) connectedMap[p] = true
           const v = validation?.get(n.id)
           return (
-            <div
-              key={n.id}
-              data-node-root
-              className="absolute"
-              style={{ left: n.x, top: n.y }}
-            >
+            <div key={n.id} data-node-root className="absolute" style={{ left: n.x, top: n.y }}>
               <PatchNode
                 node={n}
                 selected={selectedSet.has(n.id)}
@@ -733,17 +685,9 @@ export function PatchCanvas({
                     : undefined
                 }
                 onBodyPointerDown={onNodeBodyPointerDown(n.id)}
-                onOpenMenu={
-                  onOpenNodeMenu
-                    ? (anchor) => onOpenNodeMenu(n.id, anchor)
-                    : undefined
-                }
-                onToggleSolo={
-                  onToggleSolo ? () => onToggleSolo(n.id) : undefined
-                }
-                onToggleMute={
-                  onToggleMute ? () => onToggleMute(n.id) : undefined
-                }
+                onOpenMenu={onOpenNodeMenu ? (anchor) => onOpenNodeMenu(n.id, anchor) : undefined}
+                onToggleSolo={onToggleSolo ? () => onToggleSolo(n.id) : undefined}
+                onToggleMute={onToggleMute ? () => onToggleMute(n.id) : undefined}
                 onPortPointerDown={onPortPointerDown}
                 onPortPointerEnter={onPortPointerEnter}
                 onPortPointerLeave={onPortPointerLeave}
@@ -791,15 +735,10 @@ function GhostWire({
     const snap = resolve(drag.hovering.nodeId, drag.hovering.portId)
     if (snap) to = { x: snap.x, y: snap.y }
   }
-  return (
-    <PatchWire from={drag.anchor} to={to} signal={drag.signal} selected />
-  )
+  return <PatchWire from={drag.anchor} to={to} signal={drag.signal} selected />
 }
 
-function computeObstacles(
-  allNodes: GraphNode[],
-  wire: Wire
-): ReturnType<typeof nodeBounds>[] {
+function computeObstacles(allNodes: GraphNode[], wire: Wire): ReturnType<typeof nodeBounds>[] {
   return allNodes
     .filter((n) => n.id !== wire.fromNode && n.id !== wire.toNode)
     .map((n) => nodeBounds(n))
@@ -816,7 +755,7 @@ function addPort(m: Map<string, Set<string>>, nodeId: string, portId: string) {
 
 function ensureHighlight(
   m: Map<string, Record<string, boolean>>,
-  nodeId: string
+  nodeId: string,
 ): Record<string, boolean> {
   let r = m.get(nodeId)
   if (!r) {
