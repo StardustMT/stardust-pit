@@ -11,7 +11,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  # NOTE: do not set `RUSTFLAGS: -D warnings` — that escalates warnings
+  # in transitive deps too (e.g. cpal's deprecation warnings in
+  # stardust-audio). We escalate only on our own workspace, via the
+  # `-- -D warnings` arg to `cargo clippy` below.
 
 jobs:
   rust:
