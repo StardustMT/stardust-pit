@@ -16,9 +16,9 @@
 
 use serde::Serialize;
 use stardust_core::audio::{
-    list_outputs, open_default_output, open_output, AudioOutputHandle, AudioSpec,
+    AudioOutputHandle, AudioSpec, list_outputs, open_default_output, open_output,
 };
-use stardust_core::midi::{open_input, MidiInputHandle, MidiMessage};
+use stardust_core::midi::{MidiInputHandle, MidiMessage, open_input};
 use stardust_core::patch::PatchGraph;
 use stardust_core::rt::{Producer, RingBuffer};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -29,7 +29,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::engine_graph::{
-    HostedPluginStatus, NativeNodeCounts, Plan, PlanBuildError, EVENT_QUEUE, MAX_FRAMES,
+    EVENT_QUEUE, HostedPluginStatus, MAX_FRAMES, NativeNodeCounts, Plan, PlanBuildError,
     SAMPLE_RATE,
 };
 
@@ -115,7 +115,10 @@ impl EngineHandle {
     }
 
     pub fn snapshot(&self) -> EngineStatus {
-        self.status.lock().expect("engine status mutex poisoned").clone()
+        self.status
+            .lock()
+            .expect("engine status mutex poisoned")
+            .clone()
     }
 }
 
@@ -135,11 +138,7 @@ pub fn spawn(app: AppHandle) -> EngineHandle {
     EngineHandle { tx, status }
 }
 
-fn run_engine(
-    rx: mpsc::Receiver<EngineCommand>,
-    status: Arc<Mutex<EngineStatus>>,
-    app: AppHandle,
-) {
+fn run_engine(rx: mpsc::Receiver<EngineCommand>, status: Arc<Mutex<EngineStatus>>, app: AppHandle) {
     let mut running: Option<Running> = None;
 
     loop {
@@ -402,4 +401,3 @@ fn format_plan_build_error(err: &PlanBuildError) -> String {
         }
     }
 }
-
