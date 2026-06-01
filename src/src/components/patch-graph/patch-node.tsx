@@ -24,11 +24,7 @@ const PORT_RADIUS = 7
 export const NODE_WIDTH = NODE_MIN_WIDTH
 
 export interface PortDragHandle {
-  onPortPointerDown?: (
-    nodeId: string,
-    portId: string,
-    e: React.PointerEvent
-  ) => void
+  onPortPointerDown?: (nodeId: string, portId: string, e: React.PointerEvent) => void
   onPortPointerEnter?: (nodeId: string, portId: string) => void
   onPortPointerLeave?: (nodeId: string, portId: string) => void
   onPortPointerUp?: (nodeId: string, portId: string) => void
@@ -129,7 +125,7 @@ export function PatchNode({
       }}
       className={cn(
         "relative rounded-md border bg-card text-card-foreground transition-shadow",
-        "shadow-md hover:shadow-lg select-none"
+        "shadow-md hover:shadow-lg select-none",
       )}
       onContextMenu={(e) => {
         if (!onOpenMenu) return
@@ -162,7 +158,7 @@ export function PatchNode({
                 "grid size-4 place-items-center rounded-full text-[9px] font-bold",
                 validation === "warning"
                   ? "bg-amber-500 text-black"
-                  : "bg-destructive text-destructive-foreground"
+                  : "bg-destructive text-destructive-foreground",
               )}
             >
               !
@@ -180,9 +176,7 @@ export function PatchNode({
                 title="Solo"
                 className={cn(
                   "grid size-5 place-items-center rounded text-[9px] font-bold",
-                  solo
-                    ? "bg-yellow-400 text-black"
-                    : "bg-black/30 text-white/60 hover:text-white"
+                  solo ? "bg-yellow-400 text-black" : "bg-black/30 text-white/60 hover:text-white",
                 )}
               >
                 S
@@ -197,9 +191,7 @@ export function PatchNode({
                 title="Mute"
                 className={cn(
                   "grid size-5 place-items-center rounded text-[9px] font-bold",
-                  muted
-                    ? "bg-red-500 text-white"
-                    : "bg-black/30 text-white/60 hover:text-white"
+                  muted ? "bg-red-500 text-white" : "bg-black/30 text-white/60 hover:text-white",
                 )}
               >
                 M
@@ -221,12 +213,12 @@ export function PatchNode({
       >
         {/* Input port labels (left column) */}
         <div className="flex flex-col justify-start gap-0" style={{ paddingTop: 0 }}>
-          {inputs.map((p, i) => (
+          {inputs.map((p) => (
             <span
               key={p.id}
               className={cn(
                 "flex items-center text-[10px] leading-none text-muted-foreground",
-                highlighted?.[p.id] && "text-foreground font-medium"
+                highlighted?.[p.id] && "text-foreground font-medium",
               )}
               style={{ height: PORT_ROW_HEIGHT }}
             >
@@ -242,10 +234,9 @@ export function PatchNode({
 
         {/* Output port labels (right column) */}
         <div className="flex flex-col items-end justify-start gap-0">
-          {outputs.map((p, i) => {
+          {outputs.map((p) => {
             const subtitle = portSubtitle(p, outputs.length)
-            const zoneHue =
-              p.config?.kind === "zone" ? p.config.colorHue : undefined
+            const zoneHue = p.config?.kind === "zone" ? p.config.colorHue : undefined
             const subtitleColor =
               typeof zoneHue === "number" ? `oklch(0.75 0.18 ${zoneHue})` : undefined
             return (
@@ -253,7 +244,7 @@ export function PatchNode({
                 key={p.id}
                 className={cn(
                   "flex flex-col items-end justify-center text-[10px] leading-tight text-muted-foreground",
-                  highlighted?.[p.id] && "text-foreground font-medium"
+                  highlighted?.[p.id] && "text-foreground font-medium",
                 )}
                 style={{ height: PORT_ROW_HEIGHT }}
               >
@@ -347,8 +338,7 @@ function computeNodeWidth({
   const longestIn = inputs.reduce((m, p) => Math.max(m, p.label.length), 0)
   const longestOut = outputs.reduce((m, p) => Math.max(m, p.label.length), 0)
   const bodyMinPx = 90 // body widget breathing room
-  const portRowWidth =
-    longestIn * PORT_PX + longestOut * PORT_PX + bodyMinPx + 32 /* gaps */
+  const portRowWidth = longestIn * PORT_PX + longestOut * PORT_PX + bodyMinPx + 32 /* gaps */
 
   const candidate = Math.max(headerTextWidth, portRowWidth, NODE_MIN_WIDTH)
   return Math.min(NODE_MAX_WIDTH, Math.ceil(candidate))
@@ -394,9 +384,7 @@ function PortCircle({
       : connected
         ? "cursor-pointer"
         : "cursor-default"
-  const promotedTitle = promoted
-    ? `${port.label} — routed via composite outer port`
-    : null
+  const promotedTitle = promoted ? `${port.label} — routed via composite outer port` : null
   return (
     <button
       type="button"
@@ -405,7 +393,7 @@ function PortCircle({
         "absolute z-10 size-3.5 rounded-full border-2 border-card transition-transform",
         highlighted && "scale-150 ring-2 ring-primary/50",
         promoted && "opacity-50",
-        cursor
+        cursor,
       )}
       style={{
         left: side === "left" ? 0 : width,
@@ -451,10 +439,7 @@ export function nodeWidth(node: GraphNode): number {
   })
 }
 
-export function portOffset(
-  node: GraphNode,
-  portId: string
-): { x: number; y: number } | null {
+export function portOffset(node: GraphNode, portId: string): { x: number; y: number } | null {
   const port = node.ports.find((p) => p.id === portId)
   if (!port) return null
   const sideList = node.ports.filter((p) => p.direction === port.direction)
@@ -468,7 +453,7 @@ export function portOffset(
 
 export function absolutePortPosition(
   node: GraphNode,
-  portId: string
+  portId: string,
 ): { x: number; y: number } | null {
   const offset = portOffset(node, portId)
   if (!offset) return null
@@ -483,7 +468,7 @@ export function nodeBounds(node: GraphNode): {
 } {
   const maxPorts = Math.max(
     node.ports.filter((p) => p.direction === "in").length,
-    node.ports.filter((p) => p.direction === "out").length
+    node.ports.filter((p) => p.direction === "out").length,
   )
   const portsHeight = maxPorts * PORT_ROW_HEIGHT
   const widgetHeight = minBodyHeightForKind(node.kind)

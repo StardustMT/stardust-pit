@@ -52,10 +52,7 @@ export const Sizes: Story = {
 export const PanicButton: Story = {
   name: "Stardust › Panic (giant red)",
   render: () => (
-    <Button
-      variant="destructive"
-      className="h-24 w-48 text-lg font-bold uppercase tracking-wider"
-    >
+    <Button variant="destructive" className="h-24 w-48 text-lg font-bold uppercase tracking-wider">
       <AlertTriangle className="!size-6" />
       Panic
     </Button>

@@ -38,9 +38,7 @@ export function LearnableNoteField({
   className,
 }: LearnableNoteFieldProps) {
   const [listening, setListening] = React.useState(false)
-  const [draft, setDraft] = React.useState<string>(
-    value !== undefined ? String(value) : ""
-  )
+  const [draft, setDraft] = React.useState<string>(value !== undefined ? String(value) : "")
 
   // Keep the editable draft in sync with the canonical value (e.g. when Learn
   // populates it from outside, or when the stepper buttons change it).
@@ -85,7 +83,7 @@ export function LearnableNoteField({
         <div
           className={cn(
             "flex flex-1 items-stretch overflow-hidden rounded-md border bg-card",
-            listening && "border-destructive/60 bg-destructive/5"
+            listening && "border-destructive/60 bg-destructive/5",
           )}
         >
           <button
@@ -128,9 +126,7 @@ export function LearnableNoteField({
         <Button
           type="button"
           size="sm"
-          variant={
-            listening ? "destructive" : value !== undefined ? "ghost" : "outline"
-          }
+          variant={listening ? "destructive" : value !== undefined ? "ghost" : "outline"}
           onClick={() => setListening((s) => !s)}
           className="h-8 px-2 text-xs"
         >

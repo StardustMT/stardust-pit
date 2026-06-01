@@ -187,18 +187,15 @@ export function Keyboard({
     })
   }, [onNoteOff])
 
-  const noteFromPoint = React.useCallback(
-    (clientX: number, clientY: number): number | null => {
-      const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
-      const carrier = el?.closest("[data-note]") as HTMLElement | null
-      if (!carrier) return null
-      const raw = carrier.getAttribute("data-note")
-      if (!raw) return null
-      const midi = Number(raw)
-      return Number.isFinite(midi) ? midi : null
-    },
-    [],
-  )
+  const noteFromPoint = React.useCallback((clientX: number, clientY: number): number | null => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    const carrier = el?.closest("[data-note]") as HTMLElement | null
+    if (!carrier) return null
+    const raw = carrier.getAttribute("data-note")
+    if (!raw) return null
+    const midi = Number(raw)
+    return Number.isFinite(midi) ? midi : null
+  }, [])
 
   React.useEffect(() => {
     if (!playable) return
@@ -268,7 +265,6 @@ export function Keyboard({
 
   // Pixel widths
   const keysWidth = whiteKeys.length * whiteKeyWidth
-  const wheelsWidth = showWheels ? 44 : 0
 
   // Convert pointer x → MIDI note. Anchored to the keys container.
   const xToMidi = React.useCallback(
@@ -384,22 +380,15 @@ export function Keyboard({
               <div className="relative flex">
                 {whiteKeys.slice(0, -1).map((midi, i) => {
                   const blackMidi = midi + 1
-                  if (!isBlack(blackMidi)) return (
-                    <div key={i} className="shrink-0" style={{ width: whiteKeyWidth }} />
-                  )
+                  if (!isBlack(blackMidi))
+                    return <div key={i} className="shrink-0" style={{ width: whiteKeyWidth }} />
                   const noteEvent = activeByNote.get(blackMidi)
                   const isPressed = selfPressed.has(blackMidi)
                   const isActive = !!noteEvent || isPressed
-                  const zoneColor = noteEvent?.zoneId
-                    ? zoneById.get(noteEvent.zoneId)?.color
-                    : null
+                  const zoneColor = noteEvent?.zoneId ? zoneById.get(noteEvent.zoneId)?.color : null
                   const accent = zoneColor ?? "var(--primary)"
                   return (
-                    <div
-                      key={i}
-                      className="relative shrink-0"
-                      style={{ width: whiteKeyWidth }}
-                    >
+                    <div key={i} className="relative shrink-0" style={{ width: whiteKeyWidth }}>
                       <div
                         data-note={blackMidi}
                         data-active={isActive || undefined}
@@ -472,15 +461,7 @@ function WheelsColumn({
   )
 }
 
-function Wheel({
-  label,
-  value,
-  centered,
-}: {
-  label: string
-  value: number
-  centered?: boolean
-}) {
+function Wheel({ label, value, centered }: { label: string; value: number; centered?: boolean }) {
   return (
     <div className="flex h-full w-4 flex-col items-center justify-end">
       <div className="relative h-full w-full overflow-hidden rounded-sm border border-border bg-muted">
@@ -611,9 +592,7 @@ function ZoneBar({
       }
       whiteIndex = i + 1
     }
-    return side === "left"
-      ? whiteIndex * whiteKeyWidth
-      : (whiteIndex + 1) * whiteKeyWidth
+    return side === "left" ? whiteIndex * whiteKeyWidth : (whiteIndex + 1) * whiteKeyWidth
   }
 
   const totalHeight = laneCount * LANE_HEIGHT + (laneCount - 1) * LANE_GAP

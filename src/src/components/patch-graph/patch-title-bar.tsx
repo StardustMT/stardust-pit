@@ -1,5 +1,4 @@
-import * as React from "react"
-import { ChevronDown, ChevronRight, Pencil, Settings } from "lucide-react"
+import { ChevronRight, Pencil, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface PatchTitleBarProps {
@@ -29,7 +28,7 @@ export function PatchTitleBar({
     <div
       className={cn(
         "flex items-center justify-between gap-3 border-b bg-card/60 px-3 py-1.5",
-        className
+        className,
       )}
     >
       <div className="flex min-w-0 items-center gap-1.5">
@@ -46,11 +45,7 @@ export function PatchTitleBar({
           <span className="truncate text-sm font-semibold">{patchName}</span>
           <Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
         </button>
-        {meta && (
-          <span className="ml-1 truncate text-[10px] text-muted-foreground">
-            {meta}
-          </span>
-        )}
+        {meta && <span className="ml-1 truncate text-[10px] text-muted-foreground">{meta}</span>}
       </div>
       <div className="flex items-center gap-1">
         <button

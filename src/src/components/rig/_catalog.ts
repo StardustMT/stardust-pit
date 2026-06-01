@@ -145,9 +145,7 @@ export interface RigComponentInstance {
   controlRange?: "absolute" | "relative"
 }
 
-export function defaultsForKind(
-  kind: RigComponentKind
-): Partial<RigComponentInstance> {
+export function defaultsForKind(kind: RigComponentKind): Partial<RigComponentInstance> {
   switch (kind) {
     case "keyboard":
       return { midiChannel: 1 }
@@ -182,10 +180,7 @@ export function noteLabel(midi: number): string {
 }
 
 /** Derived key count for a keyboard. Returns undefined if range not yet learned. */
-export function keyCount(
-  low: number | undefined,
-  high: number | undefined
-): number | undefined {
+export function keyCount(low: number | undefined, high: number | undefined): number | undefined {
   if (low === undefined || high === undefined) return undefined
   if (high < low) return undefined
   return high - low + 1

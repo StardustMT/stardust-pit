@@ -112,16 +112,10 @@ export function ShowOutline({
             aria-label="Outline scope"
             className="inline-flex shrink-0 items-center rounded-md border bg-muted p-0.5 text-[10px]"
           >
-            <ScopeButton
-              active={liveScope === "all"}
-              onClick={() => setLiveScope("all")}
-            >
+            <ScopeButton active={liveScope === "all"} onClick={() => setLiveScope("all")}>
               All
             </ScopeButton>
-            <ScopeButton
-              active={liveScope === "current"}
-              onClick={() => setLiveScope("current")}
-            >
+            <ScopeButton active={liveScope === "current"} onClick={() => setLiveScope("current")}>
               Current
             </ScopeButton>
           </div>
@@ -153,14 +147,9 @@ export function ShowOutline({
                 >
                   {s.patches.map((p, i) => {
                     const isCurrentPatch = isLive && isCurrent && p.id === currentPatchId
-                    const currentPatchIndex = s.patches.findIndex(
-                      (q) => q.id === currentPatchId,
-                    )
+                    const currentPatchIndex = s.patches.findIndex((q) => q.id === currentPatchId)
                     const isNextPatch =
-                      isLive &&
-                      isCurrent &&
-                      currentPatchIndex !== -1 &&
-                      i === currentPatchIndex + 1
+                      isLive && isCurrent && currentPatchIndex !== -1 && i === currentPatchIndex + 1
                     return (
                       <li key={p.id}>
                         <PatchRow
@@ -257,11 +246,7 @@ function SongRow({
           )}
           aria-label={expanded ? `Collapse ${song.name}` : `Expand ${song.name}`}
         >
-          {expanded ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
-          )}
+          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         </button>
       )}
       <button
@@ -278,12 +263,7 @@ function SongRow({
         >
           {song.number}
         </span>
-        <span
-          className={cn(
-            "min-w-0 truncate text-sm leading-none",
-            current && "font-semibold",
-          )}
-        >
+        <span className={cn("min-w-0 truncate text-sm leading-none", current && "font-semibold")}>
           {song.name}
         </span>
       </button>
@@ -350,9 +330,7 @@ function PatchRow({
           </span>
         )}
       </span>
-      {next && (
-        <span className="shrink-0 text-[10px] italic text-muted-foreground">next</span>
-      )}
+      {next && <span className="shrink-0 text-[10px] italic text-muted-foreground">next</span>}
     </button>
   )
 }

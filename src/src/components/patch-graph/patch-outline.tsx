@@ -40,8 +40,7 @@ export function PatchOutline({
     return init
   })
 
-  const toggle = (id: string) =>
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))
+  const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))
 
   return (
     <div className="flex h-full flex-col gap-2 p-2">
@@ -109,18 +108,12 @@ function SongGroup({
           className="grid size-5 place-items-center rounded text-muted-foreground hover:text-foreground"
           aria-label={expanded ? "Collapse" : "Expand"}
         >
-          {expanded ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
-          )}
+          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Music className="size-3 shrink-0 text-muted-foreground" />
           <span className="truncate text-xs font-semibold">{song.name}</span>
-          <span className="text-[10px] text-muted-foreground/70">
-            ({song.patches.length})
-          </span>
+          <span className="text-[10px] text-muted-foreground/70">({song.patches.length})</span>
         </div>
         <Button
           size="icon"
@@ -144,16 +137,14 @@ function SongGroup({
                 "rounded px-2 py-1 text-left text-xs transition-colors",
                 p.id === selectedPatchId
                   ? "bg-primary/15 font-semibold text-primary"
-                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
               )}
             >
               {p.name}
             </button>
           ))}
           {song.patches.length === 0 && (
-            <div className="px-2 py-1 text-[10px] text-muted-foreground/60">
-              No patches
-            </div>
+            <div className="px-2 py-1 text-[10px] text-muted-foreground/60">No patches</div>
           )}
         </div>
       )}

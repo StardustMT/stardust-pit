@@ -44,14 +44,13 @@ use stardust_core::audio::AudioSpec;
 use stardust_core::dsp::{Eq, EqGains, Synth};
 use stardust_core::midi::MidiMessage;
 use stardust_core::patch::{
-    GraphNode, NodeId, NodeKind, PatchGraph, Port, PortConfig, PortDirection, PortId,
-    SignalKind, StereoChannel, Wire,
+    GraphNode, NodeId, NodeKind, PatchGraph, Port, PortConfig, PortDirection, PortId, SignalKind,
+    StereoChannel, Wire,
 };
 use stardust_core::plugin::clap::{
-    default_clap_search_paths, host_info, scan_paths, AudioPortBuffer, AudioPortBufferType,
-    AudioPorts, EventBuffer, InputChannel, MidiEvent, NoteOffEvent, NoteOnEvent, Pckn,
-    PluginAudioConfiguration, PluginEntry, PluginInstance, StardustHost,
-    StartedPluginAudioProcessor,
+    AudioPortBuffer, AudioPortBufferType, AudioPorts, EventBuffer, InputChannel, MidiEvent,
+    NoteOffEvent, NoteOnEvent, Pckn, PluginAudioConfiguration, PluginEntry, PluginInstance,
+    StardustHost, StartedPluginAudioProcessor, default_clap_search_paths, host_info, scan_paths,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -136,7 +135,6 @@ impl MidiBox {
             outbox: Vec::with_capacity(EVENT_QUEUE),
         }
     }
-
 }
 
 /// Stereo mono pair for one logical audio edge. We use mono-per-channel
@@ -238,7 +236,9 @@ enum PlannedNode {
     /// the hardware/UI ingress; no audio I/O of its own.
     Source,
     /// MIDI transpose. Shifts every note-on/off by `semitones`.
-    MidiTranspose { semitones: i32 },
+    MidiTranspose {
+        semitones: i32,
+    },
     /// MIDI mix is a routing-only node — its inbox already aggregates
     /// every upstream wire; it copies inbox → outbox unchanged.
     MidiMix,
@@ -476,7 +476,7 @@ impl Plan {
                     let target = route.target;
                     let inbox = &mut self.midi_boxes[target].inbox;
                     for &msg in &self.distribute_scratch {
-                        if route.zone.map_or(true, |z| zone_passes(z, msg)) {
+                        if route.zone.is_none_or(|z| zone_passes(z, msg)) {
                             inbox.push(msg);
                         }
                     }
@@ -545,7 +545,8 @@ fn flatten_composites(graph: &PatchGraph, errors: &mut Vec<PlanBuildError>) -> F
         }
     }
 
-    let composite_ids: HashSet<String> = graph.composites.iter().map(|c| c.id.to_string()).collect();
+    let composite_ids: HashSet<String> =
+        graph.composites.iter().map(|c| c.id.to_string()).collect();
 
     let mut wires = Vec::with_capacity(graph.wires.len());
     for w in &graph.wires {
@@ -648,8 +649,7 @@ impl PlanBuilder {
                 if p.signal == SignalKind::Audio && p.direction == PortDirection::Out {
                     let edge_id = self.edges.len();
                     self.edges.push(StereoEdge::zero());
-                    self.output_port_edge
-                        .insert((i, p.id.to_string()), edge_id);
+                    self.output_port_edge.insert((i, p.id.to_string()), edge_id);
                     self.routes[i].audio_outputs.push(edge_id);
                 }
             }
@@ -663,10 +663,9 @@ impl PlanBuilder {
                     continue;
                 }
                 // Find the wire(s) feeding this input port.
-                let feeding = graph
-                    .wires
-                    .iter()
-                    .find(|w| w.to_node.as_str() == n.id.as_str() && w.to_port.as_str() == p.id.as_str());
+                let feeding = graph.wires.iter().find(|w| {
+                    w.to_node.as_str() == n.id.as_str() && w.to_port.as_str() == p.id.as_str()
+                });
                 let edge = feeding.and_then(|w| {
                     let producer = self.node_index.get(w.from_node.as_str())?;
                     self.output_port_edge
@@ -712,9 +711,10 @@ impl PlanBuilder {
             }
 
             let zone = zone_filter(from_port);
-            self.routes[from_idx]
-                .midi_routes
-                .push(MidiRoute { target: to_idx, zone });
+            self.routes[from_idx].midi_routes.push(MidiRoute {
+                target: to_idx,
+                zone,
+            });
         }
     }
 
@@ -839,7 +839,8 @@ impl PlanBuilder {
                     }
                 }
                 NodeKind::InstrumentSine => {
-                    let (out_l, out_r) = match resolve_stereo_outputs(n, i, &self.output_port_edge) {
+                    let (out_l, out_r) = match resolve_stereo_outputs(n, i, &self.output_port_edge)
+                    {
                         Some(pair) => pair,
                         None => {
                             // No stereo output ports — treat as Silent.
@@ -973,14 +974,19 @@ fn extract_eq_gains(config: &Option<serde_json::Value>) -> Result<EqGains, Strin
     })
 }
 
-fn extract_plugin_choice(config: &Option<serde_json::Value>) -> Option<(PathBuf, String, String, String)> {
+fn extract_plugin_choice(
+    config: &Option<serde_json::Value>,
+) -> Option<(PathBuf, String, String, String)> {
     let obj = config.as_ref()?.as_object()?;
     let bundle_path = obj.get("bundlePath")?.as_str()?;
     let plugin_id = obj.get("pluginId")?.as_str()?;
     if bundle_path.is_empty() || plugin_id.is_empty() {
         return None;
     }
-    let plugin_name = obj.get("pluginName").and_then(|v| v.as_str()).unwrap_or(plugin_id);
+    let plugin_name = obj
+        .get("pluginName")
+        .and_then(|v| v.as_str())
+        .unwrap_or(plugin_id);
     let plugin_vendor = obj
         .get("pluginVendor")
         .and_then(|v| v.as_str())
@@ -1122,9 +1128,9 @@ fn resolve_audio_mix_inputs(
 /// Zone-filter for a MIDI source port that carries a zone config.
 fn zone_filter(port: &Port) -> Option<(u8, u8)> {
     match &port.config {
-        Some(PortConfig::Zone { from_note, to_note, .. }) => {
-            Some((*from_note, *to_note))
-        }
+        Some(PortConfig::Zone {
+            from_note, to_note, ..
+        }) => Some((*from_note, *to_note)),
         _ => None,
     }
 }
@@ -1142,12 +1148,20 @@ fn zone_passes(zone: (u8, u8), msg: MidiMessage) -> bool {
 
 fn transpose_message(msg: MidiMessage, semitones: i32) -> MidiMessage {
     match msg {
-        MidiMessage::NoteOn { channel, note, velocity } => MidiMessage::NoteOn {
+        MidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        } => MidiMessage::NoteOn {
             channel,
             note: shift_note(note, semitones),
             velocity,
         },
-        MidiMessage::NoteOff { channel, note, velocity } => MidiMessage::NoteOff {
+        MidiMessage::NoteOff {
+            channel,
+            note,
+            velocity,
+        } => MidiMessage::NoteOff {
             channel,
             note: shift_note(note, semitones),
             velocity,
@@ -1314,22 +1328,26 @@ fn process_audio_mix(m: &mut AudioMixRuntime, edges: &mut [StereoEdge], frames: 
 
 /// Get two disjoint mutable references into the edges Vec by index.
 /// Panics if `a == b` — caller's responsibility to ensure distinct ids.
-fn split_two_edges_mut(edges: &mut [StereoEdge], a: EdgeId, b: EdgeId) -> (&mut StereoEdge, &mut StereoEdge) {
+fn split_two_edges_mut(
+    edges: &mut [StereoEdge],
+    a: EdgeId,
+    b: EdgeId,
+) -> (&mut StereoEdge, &mut StereoEdge) {
     assert_ne!(a, b, "split_two_edges_mut requires distinct edge ids");
     let (low, high, swapped) = if a < b { (a, b, false) } else { (b, a, true) };
     let (left, right) = edges.split_at_mut(high);
     let lhs = &mut left[low];
     let rhs = &mut right[0];
-    if swapped {
-        (rhs, lhs)
-    } else {
-        (lhs, rhs)
-    }
+    if swapped { (rhs, lhs) } else { (lhs, rhs) }
 }
 
 fn push_midi_as_clap_events(buf: &mut EventBuffer, msg: MidiMessage) {
     match msg {
-        MidiMessage::NoteOn { channel, note, velocity } => {
+        MidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        } => {
             let event = NoteOnEvent::new(
                 0,
                 Pckn::new(0u16, channel as u16, note as u16, u32::MAX),
@@ -1337,7 +1355,11 @@ fn push_midi_as_clap_events(buf: &mut EventBuffer, msg: MidiMessage) {
             );
             buf.push(&event);
         }
-        MidiMessage::NoteOff { channel, note, velocity } => {
+        MidiMessage::NoteOff {
+            channel,
+            note,
+            velocity,
+        } => {
             let event = NoteOffEvent::new(
                 0,
                 Pckn::new(0u16, channel as u16, note as u16, u32::MAX),
@@ -1368,9 +1390,11 @@ fn midi_message_to_bytes(msg: MidiMessage) -> Option<[u8; 3]> {
         MidiMessage::ChannelPressure { channel, value } => {
             Some([0xD0 | (channel & 0x0F), value & 0x7F, 0])
         }
-        MidiMessage::PolyAftertouch { channel, note, value } => {
-            Some([0xA0 | (channel & 0x0F), note & 0x7F, value & 0x7F])
-        }
+        MidiMessage::PolyAftertouch {
+            channel,
+            note,
+            value,
+        } => Some([0xA0 | (channel & 0x0F), note & 0x7F, value & 0x7F]),
         MidiMessage::ProgramChange { channel, program } => {
             Some([0xC0 | (channel & 0x0F), program & 0x7F, 0])
         }
@@ -1459,13 +1483,14 @@ fn try_instantiate_plugin(
     let stopped = plugin
         .activate(|_, _| (), config)
         .map_err(|e| PluginInstError::ActivationFailed(format!("activation failed: {e:?}")))?;
-    let started = stopped
-        .start_processing()
-        .map_err(|e| PluginInstError::ActivationFailed(format!("start_processing failed: {e:?}")))?;
+    let started = stopped.start_processing().map_err(|e| {
+        PluginInstError::ActivationFailed(format!("start_processing failed: {e:?}"))
+    })?;
 
-    let (out_l, out_r) = resolve_stereo_outputs(node, node_idx, output_port_edge).ok_or_else(
-        || PluginInstError::LoadFailed("plugin node has no stereo audio output ports".into()),
-    )?;
+    let (out_l, out_r) =
+        resolve_stereo_outputs(node, node_idx, output_port_edge).ok_or_else(|| {
+            PluginInstError::LoadFailed("plugin node has no stereo audio output ports".into())
+        })?;
 
     // We deliberately drop `plugin` (PluginInstance) and `entry` here.
     // The clack-host StartedPluginAudioProcessor keeps an Arc on the
@@ -1668,20 +1693,18 @@ mod tests {
             Err(errs) => errs,
             Ok(_) => panic!("cycle should fail"),
         };
-        assert!(errors
-            .iter()
-            .any(|e| matches!(e, PlanBuildError::AudioCycle { .. })));
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, PlanBuildError::AudioCycle { .. }))
+        );
     }
 
     #[test]
     fn composite_flattening_preserves_wire_targets() {
         // Inner: keyboard -> organ; composite exposes one MIDI in
         // promoted to organ.midi-in. External: keyboard -> composite/in.
-        let keyboard = node(
-            "kb",
-            NodeKind::SourceKeyboard,
-            vec![midi_out("out")],
-        );
+        let keyboard = node("kb", NodeKind::SourceKeyboard, vec![midi_out("out")]);
         let organ = node(
             "organ",
             NodeKind::InstrumentPlugin,
@@ -1723,11 +1746,39 @@ mod tests {
     #[test]
     fn zone_filter_drops_out_of_range_notes() {
         let zone = (60, 72);
-        assert!(zone_passes(zone, MidiMessage::NoteOn { channel: 0, note: 65, velocity: 100 }));
-        assert!(!zone_passes(zone, MidiMessage::NoteOn { channel: 0, note: 59, velocity: 100 }));
-        assert!(!zone_passes(zone, MidiMessage::NoteOn { channel: 0, note: 73, velocity: 100 }));
+        assert!(zone_passes(
+            zone,
+            MidiMessage::NoteOn {
+                channel: 0,
+                note: 65,
+                velocity: 100
+            }
+        ));
+        assert!(!zone_passes(
+            zone,
+            MidiMessage::NoteOn {
+                channel: 0,
+                note: 59,
+                velocity: 100
+            }
+        ));
+        assert!(!zone_passes(
+            zone,
+            MidiMessage::NoteOn {
+                channel: 0,
+                note: 73,
+                velocity: 100
+            }
+        ));
         // CC always passes regardless of zone (it has no note).
-        assert!(zone_passes(zone, MidiMessage::ControlChange { channel: 0, cc: 1, value: 64 }));
+        assert!(zone_passes(
+            zone,
+            MidiMessage::ControlChange {
+                channel: 0,
+                cc: 1,
+                value: 64
+            }
+        ));
     }
 
     #[test]
@@ -1858,7 +1909,11 @@ mod tests {
 
         // Unconfigured plugins become Silent — no soft errors expected.
         assert_eq!(out.plugins.len(), 0);
-        assert!(out.soft_errors.is_empty(), "soft errors: {:?}", out.soft_errors);
+        assert!(
+            out.soft_errors.is_empty(),
+            "soft errors: {:?}",
+            out.soft_errors
+        );
 
         let counts = out.plan.native_node_counts();
         assert_eq!(counts.midi_transpose, 1);
@@ -1878,7 +1933,11 @@ mod tests {
 
     #[test]
     fn transpose_shifts_notes() {
-        let msg = MidiMessage::NoteOn { channel: 0, note: 60, velocity: 100 };
+        let msg = MidiMessage::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        };
         let shifted = transpose_message(msg, 12);
         match shifted {
             MidiMessage::NoteOn { note, .. } => assert_eq!(note, 72),

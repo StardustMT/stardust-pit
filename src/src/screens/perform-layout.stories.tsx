@@ -64,8 +64,8 @@ export const LayoutEditor: Story = {
                   Little Shop · Skid Row
                 </div>
                 <div className="mt-2 max-w-md text-sm">
-                  The configured Live canvas renders here. A real composed Live layout lands in
-                  a future iteration.
+                  The configured Live canvas renders here. A real composed Live layout lands in a
+                  future iteration.
                 </div>
               </div>
             </div>

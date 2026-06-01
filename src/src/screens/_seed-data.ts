@@ -20,26 +20,49 @@ import type { OutlineSong as ShowOutlineSong } from "@/components/show/show-outl
 // =============================================================================
 
 export const LSOH_SONGS: ShowOutlineSong[] = [
-  { id: "s1", number: 1, name: "Prologue", patches: [
-    { id: "p1.1", number: 1, name: "Cold open" },
-    { id: "p1.2", number: 2, name: "Underscoring" },
-  ] },
-  { id: "s2", number: 2, name: "Skid Row (Downtown)", patches: [
-    { id: "p2.1", number: 1, name: "Verse groove" },
-    { id: "p2.2", number: 2, name: "Chorus pads" },
-    { id: "p2.3", number: 3, name: "Final lift" },
-  ] },
-  { id: "s3", number: 3, name: "Somewhere That's Green", patches: [
-    { id: "p3.1", number: 1, name: "Solo piano" },
-    { id: "p3.2", number: 2, name: "Strings entry" },
-  ] },
-  { id: "s4", number: 4, name: "Feed Me (Git It)", patches: [
-    { id: "p4.1", number: 1, name: "Stab section" },
-    { id: "p4.2", number: 2, name: "Growl bass + pads" },
-  ] },
-  { id: "s5", number: 5, name: "Suddenly Seymour", patches: [
-    { id: "p5.1", number: 1, name: "Acoustic + strings" },
-  ] },
+  {
+    id: "s1",
+    number: 1,
+    name: "Prologue",
+    patches: [
+      { id: "p1.1", number: 1, name: "Cold open" },
+      { id: "p1.2", number: 2, name: "Underscoring" },
+    ],
+  },
+  {
+    id: "s2",
+    number: 2,
+    name: "Skid Row (Downtown)",
+    patches: [
+      { id: "p2.1", number: 1, name: "Verse groove" },
+      { id: "p2.2", number: 2, name: "Chorus pads" },
+      { id: "p2.3", number: 3, name: "Final lift" },
+    ],
+  },
+  {
+    id: "s3",
+    number: 3,
+    name: "Somewhere That's Green",
+    patches: [
+      { id: "p3.1", number: 1, name: "Solo piano" },
+      { id: "p3.2", number: 2, name: "Strings entry" },
+    ],
+  },
+  {
+    id: "s4",
+    number: 4,
+    name: "Feed Me (Git It)",
+    patches: [
+      { id: "p4.1", number: 1, name: "Stab section" },
+      { id: "p4.2", number: 2, name: "Growl bass + pads" },
+    ],
+  },
+  {
+    id: "s5",
+    number: 5,
+    name: "Suddenly Seymour",
+    patches: [{ id: "p5.1", number: 1, name: "Acoustic + strings" }],
+  },
 ]
 
 // =============================================================================
@@ -67,8 +90,20 @@ export function transposedSplitPatchGraph(): PatchGraph {
   const keyboard = makeNode("source.keyboard", { x: 80, y: 240 })
   keyboard.name = "Main keyboard"
   keyboard.ports = [
-    { id: "out-low", label: "Low", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 36, toNote: 59 } },
-    { id: "out-high", label: "High", signal: "midi", direction: "out", config: { kind: "zone", fromNote: 60, toNote: 108 } },
+    {
+      id: "out-low",
+      label: "Low",
+      signal: "midi",
+      direction: "out",
+      config: { kind: "zone", fromNote: 36, toNote: 59 },
+    },
+    {
+      id: "out-high",
+      label: "High",
+      signal: "midi",
+      direction: "out",
+      config: { kind: "zone", fromNote: 60, toNote: 108 },
+    },
   ]
   const transpose = makeNode("midi.transpose", { x: 420, y: 100 })
   transpose.name = "Down an octave"
@@ -144,11 +179,35 @@ export function compositeBlockPatchGraph(): PatchGraph {
   const leslie = makeNode("audio.eq", { x: 840, y: 220 })
   leslie.name = "Leslie sim"
   leslie.ports = [
-    { id: "in-l", label: "In L", signal: "audio", direction: "in", config: { kind: "stereo", channel: "L" } },
-    { id: "in-r", label: "In R", signal: "audio", direction: "in", config: { kind: "stereo", channel: "R" } },
+    {
+      id: "in-l",
+      label: "In L",
+      signal: "audio",
+      direction: "in",
+      config: { kind: "stereo", channel: "L" },
+    },
+    {
+      id: "in-r",
+      label: "In R",
+      signal: "audio",
+      direction: "in",
+      config: { kind: "stereo", channel: "R" },
+    },
     { id: "midi-speed", label: "Speed CC", signal: "midi", direction: "in" },
-    { id: "out-l", label: "Out L", signal: "audio", direction: "out", config: { kind: "stereo", channel: "L" } },
-    { id: "out-r", label: "Out R", signal: "audio", direction: "out", config: { kind: "stereo", channel: "R" } },
+    {
+      id: "out-l",
+      label: "Out L",
+      signal: "audio",
+      direction: "out",
+      config: { kind: "stereo", channel: "L" },
+    },
+    {
+      id: "out-r",
+      label: "Out R",
+      signal: "audio",
+      direction: "out",
+      config: { kind: "stereo", channel: "R" },
+    },
   ]
   const out = makeNode("sink.main-out", { x: 1200, y: 300 })
   const compositeId = "c1"
@@ -173,10 +232,38 @@ export function compositeBlockPatchGraph(): PatchGraph {
         locked: true,
         colorHue: 60, // amber by default — picker can change
         promotedPorts: [
-          { id: "in", label: "Keys", direction: "in", signal: "midi", internalNode: organ.id, internalPort: "midi-in" },
-          { id: "speed", label: "Speed", direction: "in", signal: "midi", internalNode: leslie.id, internalPort: "midi-speed" },
-          { id: "out-l", label: "Out L", direction: "out", signal: "audio", internalNode: leslie.id, internalPort: "out-l" },
-          { id: "out-r", label: "Out R", direction: "out", signal: "audio", internalNode: leslie.id, internalPort: "out-r" },
+          {
+            id: "in",
+            label: "Keys",
+            direction: "in",
+            signal: "midi",
+            internalNode: organ.id,
+            internalPort: "midi-in",
+          },
+          {
+            id: "speed",
+            label: "Speed",
+            direction: "in",
+            signal: "midi",
+            internalNode: leslie.id,
+            internalPort: "midi-speed",
+          },
+          {
+            id: "out-l",
+            label: "Out L",
+            direction: "out",
+            signal: "audio",
+            internalNode: leslie.id,
+            internalPort: "out-l",
+          },
+          {
+            id: "out-r",
+            label: "Out R",
+            direction: "out",
+            signal: "audio",
+            internalNode: leslie.id,
+            internalPort: "out-r",
+          },
         ],
       },
     ],

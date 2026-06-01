@@ -2,8 +2,7 @@ import * as React from "react"
 import { AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export interface PanicButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface PanicButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "default" | "lg" | "xl"
 }
 

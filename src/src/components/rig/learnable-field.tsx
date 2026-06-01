@@ -43,7 +43,9 @@ export function LearnableField({
     if (!listening) return
     const t = window.setTimeout(() => {
       setListening(false)
-      const captured = mockCapture ? mockCapture() : `CC ${Math.floor(Math.random() * 127) + 1} ch 1`
+      const captured = mockCapture
+        ? mockCapture()
+        : `CC ${Math.floor(Math.random() * 127) + 1} ch 1`
       onCapture?.(captured)
     }, mockListenMs)
     return () => window.clearTimeout(t)
@@ -56,7 +58,7 @@ export function LearnableField({
         <div
           className={cn(
             "flex flex-1 items-center rounded-md border bg-card px-2.5 text-xs",
-            listening && "border-destructive/60 bg-destructive/5"
+            listening && "border-destructive/60 bg-destructive/5",
           )}
         >
           {listening ? (

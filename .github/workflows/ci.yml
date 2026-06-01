@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # NOTE: do not set `RUSTFLAGS: -D warnings` — that escalates warnings
+  # in transitive deps too (e.g. cpal's deprecation warnings in
+  # stardust-audio). We escalate only on our own workspace, via the
+  # `-- -D warnings` arg to `cargo clippy` below.
+
+jobs:
+  rust:
+    name: rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # Lay the two repos out as siblings so the relative path-dep on
+      # `../stardust-core/crates/stardust-core` in src-tauri/Cargo.toml
+      # resolves in CI the same way it does on a dev machine.
+      - uses: actions/checkout@v4
+        with:
+          path: stardust-pit
+
+      - uses: actions/checkout@v4
+        with:
+          repository: StardustMT/stardust-core
+          path: stardust-core
+
+      - name: Install Linux audio + Tauri deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stardust-pit/src-tauri
+
+      - name: cargo fmt --check
+        working-directory: stardust-pit/src-tauri
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        working-directory: stardust-pit/src-tauri
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo check
+        working-directory: stardust-pit/src-tauri
+        run: cargo check --workspace --all-targets
+
+      - name: cargo test
+        working-directory: stardust-pit/src-tauri
+        run: cargo test --workspace
+
+  frontend:
+    name: frontend (ubuntu)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stardust-pit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: stardust-pit
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: bun install
+        run: bun install --frozen-lockfile
+
+      - name: prettier --check
+        run: bun ui:prettier --check
+
+      - name: eslint
+        run: bun ui:eslint
+
+      - name: tsc --noEmit
+        run: bun ui:tsc
+
+      - name: vitest
+        run: bun ui:test
+
+  storybook:
+    name: storybook (ubuntu)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stardust-pit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: stardust-pit
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: bun install
+        run: bun install --frozen-lockfile
+
+      - name: build-storybook
+        run: bun ui:build-storybook

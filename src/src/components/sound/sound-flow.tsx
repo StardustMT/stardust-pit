@@ -1,11 +1,5 @@
 import * as React from "react"
-import {
-  AlertTriangle,
-  Music4,
-  Plus,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react"
+import { AlertTriangle, Music4, Plus, Sparkles, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -195,16 +189,17 @@ function Block({
           <meta.Icon className={cn("size-3 shrink-0", meta.tone)} />
           <span className={cn("text-[10px] font-semibold uppercase tracking-wider", meta.tone)}>
             {meta.label}
-            {showLayerHint && (
-              <span className="ml-1 opacity-60">· layer</span>
-            )}
+            {showLayerHint && <span className="ml-1 opacity-60">· layer</span>}
           </span>
         </span>
-        {advanced && block.kind !== "warning" && "format" in block && block.format !== "built-in" && (
-          <span className="rounded bg-muted px-1 py-0.5 font-mono text-[9px] uppercase text-muted-foreground">
-            {block.format}
-          </span>
-        )}
+        {advanced &&
+          block.kind !== "warning" &&
+          "format" in block &&
+          block.format !== "built-in" && (
+            <span className="rounded bg-muted px-1 py-0.5 font-mono text-[9px] uppercase text-muted-foreground">
+              {block.format}
+            </span>
+          )}
       </div>
 
       <div className="min-w-0">

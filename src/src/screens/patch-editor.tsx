@@ -19,10 +19,7 @@ import {
   Volume2,
   Waves,
 } from "lucide-react"
-import {
-  AppShellFrame,
-  InspectorFrame,
-} from "@/components/shell/app-shell-frame"
+import { AppShellFrame, InspectorFrame } from "@/components/shell/app-shell-frame"
 import type { AppMode } from "@/components/shell/nav-rail"
 import { ShowOutline } from "@/components/show/show-outline"
 import type { OutlineSong as ShowOutlineSong } from "@/components/show/show-outline"
@@ -32,10 +29,7 @@ import { RightPanel, type RigSource } from "@/components/patch-graph/right-panel
 import { PatchTabRail, type PatchTabSpec } from "@/components/patch-graph/patch-tab-rail"
 import { PatchTitleBar } from "@/components/patch-graph/patch-title-bar"
 import { LivePreview } from "@/components/patch-graph/live-preview"
-import {
-  ContextMenu,
-  type ContextMenuSection,
-} from "@/components/patch-graph/context-menu"
+import { ContextMenu, type ContextMenuSection } from "@/components/patch-graph/context-menu"
 import type {
   CompositeBlock,
   GraphNode,
@@ -43,11 +37,7 @@ import type {
   PatchGraph,
   Wire,
 } from "@/components/patch-graph/_types"
-import {
-  CLASS_COLORS,
-  classOf,
-  getPluginChoice,
-} from "@/components/patch-graph/_types"
+import { CLASS_COLORS, classOf, getPluginChoice } from "@/components/patch-graph/_types"
 import {
   Select,
   SelectContent,
@@ -79,7 +69,7 @@ import { cn } from "@/lib/utils"
  * above the highest existing zone, capped at MIDI 108.
  */
 function nextZoneRange(
-  zones: Array<{ config?: { kind: string; fromNote?: number; toNote?: number } }>
+  zones: Array<{ config?: { kind: string; fromNote?: number; toNote?: number } }>,
 ): { fromNote: number; toNote: number } {
   if (zones.length === 0) return { fromNote: 60, toNote: 84 }
   const highest = zones
@@ -366,7 +356,7 @@ export function PatchEditor({
       }
       onGraphChange(next)
     },
-    [onGraphChange]
+    [onGraphChange],
   )
 
   const onNodeDragStart = () => {
@@ -458,8 +448,12 @@ export function PatchEditor({
 
   const shiftDownRef = React.useRef(false)
   React.useEffect(() => {
-    const down = (e: KeyboardEvent) => { if (e.key === "Shift") shiftDownRef.current = true }
-    const up = (e: KeyboardEvent) => { if (e.key === "Shift") shiftDownRef.current = false }
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftDownRef.current = true
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftDownRef.current = false
+    }
     window.addEventListener("keydown", down)
     window.addEventListener("keyup", up)
     return () => {
@@ -479,7 +473,7 @@ export function PatchEditor({
   const addNodeAt = (
     kind: NodeKind,
     pos: { x: number; y: number },
-    overrides?: { name?: string; config?: Record<string, unknown> }
+    overrides?: { name?: string; config?: Record<string, unknown> },
   ) => {
     const node = makeNode(kind, pos, overrides)
     setGraph((g) => ({ ...g, nodes: [...g.nodes, node] }))
@@ -487,7 +481,7 @@ export function PatchEditor({
   }
   const addNode = (
     kind: NodeKind,
-    overrides?: { name?: string; config?: Record<string, unknown> }
+    overrides?: { name?: string; config?: Record<string, unknown> },
   ) => addNodeAt(kind, { x: 120, y: 160 }, overrides)
 
   const moveNodes = (deltas: Array<{ id: string; x: number; y: number }>) => {
@@ -499,7 +493,7 @@ export function PatchEditor({
           return d ? { ...n, x: d.x, y: d.y } : n
         }),
       }),
-      { skipHistory: true }
+      { skipHistory: true },
     )
   }
 
@@ -512,7 +506,7 @@ export function PatchEditor({
         .map((c) => ({ ...c, contains: c.contains.filter((c2) => c2 !== id) }))
         .filter((c) => c.contains.length > 0),
     }))
-    selectedNodeIds.has(id) && selectNode(undefined)
+    if (selectedNodeIds.has(id)) selectNode(undefined)
   }
 
   const deleteSelectedNodes = () => {
@@ -531,13 +525,18 @@ export function PatchEditor({
     }))
   }
 
-  const createWire = (p: { fromNode: string; fromPort: string; toNode: string; toPort: string }) => {
+  const createWire = (p: {
+    fromNode: string
+    fromPort: string
+    toNode: string
+    toPort: string
+  }) => {
     const dup = graph.wires.find(
       (w) =>
         w.fromNode === p.fromNode &&
         w.fromPort === p.fromPort &&
         w.toNode === p.toNode &&
-        w.toPort === p.toPort
+        w.toPort === p.toPort,
     )
     if (dup) return
     const sourceNode = graph.nodes.find((n) => n.id === p.fromNode)
@@ -563,24 +562,20 @@ export function PatchEditor({
   const toggleCompositeLock = (id: string) => {
     setGraph((g) => ({
       ...g,
-      composites: g.composites.map((c) =>
-        c.id === id ? { ...c, locked: !c.locked } : c
-      ),
+      composites: g.composites.map((c) => (c.id === id ? { ...c, locked: !c.locked } : c)),
     }))
   }
 
   const setCompositeColor = (id: string, hue: number | undefined) => {
     setGraph((g) => ({
       ...g,
-      composites: g.composites.map((c) =>
-        c.id === id ? { ...c, colorHue: hue } : c
-      ),
+      composites: g.composites.map((c) => (c.id === id ? { ...c, colorHue: hue } : c)),
     }))
   }
 
   const addPromotedPort = (
     compositeId: string,
-    spec: { internalNode: string; internalPort: string; label: string }
+    spec: { internalNode: string; internalPort: string; label: string },
   ) => {
     setGraph((g) => ({
       ...g,
@@ -615,12 +610,12 @@ export function PatchEditor({
       composites: g.composites.map((c) =>
         c.id === compositeId
           ? { ...c, promotedPorts: c.promotedPorts.filter((p) => p.id !== portId) }
-          : c
+          : c,
       ),
       wires: g.wires.filter(
         (w) =>
           !(w.fromNode === compositeId && w.fromPort === portId) &&
-          !(w.toNode === compositeId && w.toPort === portId)
+          !(w.toNode === compositeId && w.toPort === portId),
       ),
     }))
   }
@@ -628,7 +623,7 @@ export function PatchEditor({
   const resizeZone = (
     nodeId: string,
     portId: string,
-    range: { fromNote: number; toNote: number }
+    range: { fromNote: number; toNote: number },
   ) => {
     setGraph((g) => ({
       ...g,
@@ -638,7 +633,10 @@ export function PatchEditor({
           ...n,
           ports: n.ports.map((p) => {
             if (p.id !== portId) return p
-            const cfg = p.config?.kind === "zone" ? p.config : { kind: "zone" as const, fromNote: 0, toNote: 0 }
+            const cfg =
+              p.config?.kind === "zone"
+                ? p.config
+                : { kind: "zone" as const, fromNote: 0, toNote: 0 }
             return { ...p, config: { ...cfg, fromNote: range.fromNote, toNote: range.toNote } }
           }),
         }
@@ -651,12 +649,12 @@ export function PatchEditor({
       const node = g.nodes.find((n) => n.id === nodeId)
       if (!node) return g
       const existingZones = node.ports.filter(
-        (p) => p.direction === "out" && p.config?.kind === "zone"
+        (p) => p.direction === "out" && p.config?.kind === "zone",
       )
       const usedHues = new Set(
         existingZones
           .map((p) => (p.config as { colorHue?: number }).colorHue)
-          .filter((h): h is number => typeof h === "number")
+          .filter((h): h is number => typeof h === "number"),
       )
       const nextHue = pickNextZoneHue(usedHues)
       const newId = `zone-${Date.now()}`
@@ -701,30 +699,22 @@ export function PatchEditor({
         }
         return {
           ...g,
-          nodes: g.nodes.map((n) =>
-            n.id !== nodeId ? n : { ...n, ports: [lowZone, highZone] }
-          ),
+          nodes: g.nodes.map((n) => (n.id !== nodeId ? n : { ...n, ports: [lowZone, highZone] })),
           wires: g.wires.map((w) =>
             w.fromNode === nodeId && w.fromPort === singleOut.id
               ? { ...w, fromPort: highZone.id, color: hueToColor(nextHue) }
-              : w
+              : w,
           ),
         }
       }
       return {
         ...g,
-        nodes: g.nodes.map((n) =>
-          n.id !== nodeId ? n : { ...n, ports: [...n.ports, newPort] }
-        ),
+        nodes: g.nodes.map((n) => (n.id !== nodeId ? n : { ...n, ports: [...n.ports, newPort] })),
       }
     })
   }
 
-  const setZoneColor = (
-    nodeId: string,
-    portId: string,
-    hue: number | undefined
-  ) => {
+  const setZoneColor = (nodeId: string, portId: string, hue: number | undefined) => {
     setGraph((g) => {
       const node = g.nodes.find((n) => n.id === nodeId)
       const port = node?.ports.find((p) => p.id === portId)
@@ -740,26 +730,22 @@ export function PatchEditor({
                 ports: n.ports.map((p) =>
                   p.id !== portId || p.config?.kind !== "zone"
                     ? p
-                    : { ...p, config: { ...p.config, colorHue: hue } }
+                    : { ...p, config: { ...p.config, colorHue: hue } },
                 ),
-              }
+              },
         ),
         wires: wireFollows
           ? g.wires.map((w) =>
               w.fromNode === nodeId && w.fromPort === portId
                 ? { ...w, color: hue === undefined ? undefined : hueToColor(hue) }
-                : w
+                : w,
             )
           : g.wires,
       }
     })
   }
 
-  const setZoneWireFollows = (
-    nodeId: string,
-    portId: string,
-    follows: boolean
-  ) => {
+  const setZoneWireFollows = (nodeId: string, portId: string, follows: boolean) => {
     setGraph((g) => {
       const node = g.nodes.find((n) => n.id === nodeId)
       const port = node?.ports.find((p) => p.id === portId)
@@ -775,16 +761,16 @@ export function PatchEditor({
                 ports: n.ports.map((p) =>
                   p.id !== portId || p.config?.kind !== "zone"
                     ? p
-                    : { ...p, config: { ...p.config, wireFollowsColor: follows } }
+                    : { ...p, config: { ...p.config, wireFollowsColor: follows } },
                 ),
-              }
+              },
         ),
         wires:
           follows && typeof hue === "number"
             ? g.wires.map((w) =>
                 w.fromNode === nodeId && w.fromPort === portId
                   ? { ...w, color: hueToColor(hue) }
-                  : w
+                  : w,
               )
             : g.wires,
       }
@@ -795,11 +781,9 @@ export function PatchEditor({
     setGraph((g) => ({
       ...g,
       nodes: g.nodes.map((n) =>
-        n.id !== nodeId ? n : { ...n, ports: n.ports.filter((p) => p.id !== portId) }
+        n.id !== nodeId ? n : { ...n, ports: n.ports.filter((p) => p.id !== portId) },
       ),
-      wires: g.wires.filter(
-        (w) => !(w.fromNode === nodeId && w.fromPort === portId)
-      ),
+      wires: g.wires.filter((w) => !(w.fromNode === nodeId && w.fromPort === portId)),
     }))
   }
 
@@ -812,7 +796,7 @@ export function PatchEditor({
     setGraph((g) => ({
       ...g,
       nodes: g.nodes.map((n) =>
-        n.id !== nodeId ? n : { ...n, config: { ...(n.config ?? {}), ...patch } }
+        n.id !== nodeId ? n : { ...n, config: { ...(n.config ?? {}), ...patch } },
       ),
     }))
   }
@@ -820,14 +804,16 @@ export function PatchEditor({
   const toggleSolo = (id: string) => {
     setSoloed((s) => {
       const next = new Set(s)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
   const toggleMute = (id: string) => {
     setMuted((m) => {
       const next = new Set(m)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -859,7 +845,7 @@ export function PatchEditor({
 
   const openCanvasMenu = (
     anchor: { x: number; y: number },
-    canvasPos: { x: number; y: number }
+    canvasPos: { x: number; y: number },
   ) => {
     setContextMenu({
       anchor,
@@ -867,10 +853,30 @@ export function PatchEditor({
         {
           id: "quick-add",
           items: [
-            { id: "add-keyboard", label: "Add keyboard here", icon: Music, onSelect: () => addNodeAt("source.keyboard", canvasPos) },
-            { id: "add-sine", label: "Add sine synth here", icon: Waves, onSelect: () => addNodeAt("instrument.sine", canvasPos) },
-            { id: "add-eq", label: "Add EQ here", icon: Settings2, onSelect: () => addNodeAt("audio.eq", canvasPos) },
-            { id: "add-out", label: "Add output here", icon: Volume2, onSelect: () => addNodeAt("sink.main-out", canvasPos) },
+            {
+              id: "add-keyboard",
+              label: "Add keyboard here",
+              icon: Music,
+              onSelect: () => addNodeAt("source.keyboard", canvasPos),
+            },
+            {
+              id: "add-sine",
+              label: "Add sine synth here",
+              icon: Waves,
+              onSelect: () => addNodeAt("instrument.sine", canvasPos),
+            },
+            {
+              id: "add-eq",
+              label: "Add EQ here",
+              icon: Settings2,
+              onSelect: () => addNodeAt("audio.eq", canvasPos),
+            },
+            {
+              id: "add-out",
+              label: "Add output here",
+              icon: Volume2,
+              onSelect: () => addNodeAt("sink.main-out", canvasPos),
+            },
           ],
         },
       ],
@@ -892,7 +898,15 @@ export function PatchEditor({
         },
         {
           id: "destroy",
-          items: [{ id: "delete", label: "Delete node", icon: Trash2, variant: "danger", onSelect: () => deleteNode(nodeId) }],
+          items: [
+            {
+              id: "delete",
+              label: "Delete node",
+              icon: Trash2,
+              variant: "danger",
+              onSelect: () => deleteNode(nodeId),
+            },
+          ],
         },
       ],
     })
@@ -906,7 +920,12 @@ export function PatchEditor({
         {
           id: "color",
           items: [
-            { id: "color-default", label: "Default (signal color)", icon: RotateCcw, onSelect: () => setWireColor(wireId, undefined) },
+            {
+              id: "color-default",
+              label: "Default (signal color)",
+              icon: RotateCcw,
+              onSelect: () => setWireColor(wireId, undefined),
+            },
             ...WIRE_COLORS.map((c) => ({
               id: `color-${c.id}`,
               label: c.label,
@@ -917,7 +936,15 @@ export function PatchEditor({
         },
         {
           id: "destroy",
-          items: [{ id: "delete", label: "Delete wire", icon: Trash2, variant: "danger", onSelect: () => deleteWire(wireId) }],
+          items: [
+            {
+              id: "delete",
+              label: "Delete wire",
+              icon: Trash2,
+              variant: "danger",
+              onSelect: () => deleteWire(wireId),
+            },
+          ],
         },
       ],
     })
@@ -933,7 +960,12 @@ export function PatchEditor({
         {
           id: "state",
           items: [
-            { id: "lock", label: c.locked ? "Unlock (edit contents)" : "Lock (drag as one)", icon: c.locked ? Unlock : Lock, onSelect: () => toggleCompositeLock(id) },
+            {
+              id: "lock",
+              label: c.locked ? "Unlock (edit contents)" : "Lock (drag as one)",
+              icon: c.locked ? Unlock : Lock,
+              onSelect: () => toggleCompositeLock(id),
+            },
             { id: "rename", label: "Rename composite", icon: Pencil, disabled: true },
             { id: "save", label: "Save to My Blocks…", icon: Plus, disabled: true },
           ],
@@ -942,7 +974,13 @@ export function PatchEditor({
           id: "destroy",
           items: [
             { id: "unwrap", label: "Unwrap (keep nodes)", icon: Box, disabled: true },
-            { id: "delete", label: "Delete (and contained nodes)", icon: Trash2, variant: "danger", disabled: true },
+            {
+              id: "delete",
+              label: "Delete (and contained nodes)",
+              icon: Trash2,
+              variant: "danger",
+              disabled: true,
+            },
           ],
         },
       ],
@@ -968,9 +1006,8 @@ export function PatchEditor({
   const bottomTabs: PatchTabSpec[] = [
     {
       id: "settings",
-      label: warningCount + errorCount > 0
-        ? `Settings (${warningCount + errorCount} ⚠)`
-        : "Settings",
+      label:
+        warningCount + errorCount > 0 ? `Settings (${warningCount + errorCount} ⚠)` : "Settings",
       content: (
         <SettingsTab
           breadcrumb={settingsBreadcrumb}
@@ -1009,8 +1046,24 @@ export function PatchEditor({
         />
       ),
     },
-    { id: "mix", label: "Mix", content: <MixTab nodes={graph.nodes} soloed={soloed} muted={muted} onToggleSolo={toggleSolo} onToggleMute={toggleMute} /> },
-    { id: "preview", label: "Preview", content: <LivePreview graph={graph} patchName={patchName} onResizeZone={resizeZone} /> },
+    {
+      id: "mix",
+      label: "Mix",
+      content: (
+        <MixTab
+          nodes={graph.nodes}
+          soloed={soloed}
+          muted={muted}
+          onToggleSolo={toggleSolo}
+          onToggleMute={toggleMute}
+        />
+      ),
+    },
+    {
+      id: "preview",
+      label: "Preview",
+      content: <LivePreview graph={graph} patchName={patchName} onResizeZone={resizeZone} />,
+    },
   ]
 
   // -------------------------------------------------------------------
@@ -1041,7 +1094,7 @@ export function PatchEditor({
             <RightPanel
               onAddNode={addNode}
               rigSources={augmentedRigSources}
-              onOpenRigScreen={() => setMode("rig")}
+              onOpenRigScreen={() => setMode("setup")}
               installedPlugins={installedPlugins}
               savedComposites={savedComposites}
             />
@@ -1078,12 +1131,14 @@ export function PatchEditor({
                 </button>
                 <div className="mx-1 h-3 w-px bg-border" />
                 <span className="text-[10px] text-muted-foreground">
-                  Shift-click for multi-select · Drag library cards onto canvas · Right-click to add at point
+                  Shift-click for multi-select · Drag library cards onto canvas · Right-click to add
+                  at point
                 </span>
                 {warningCount + errorCount > 0 && (
                   <span className="ml-auto flex items-center gap-1 text-[10px] text-amber-500">
                     <AlertTriangle className="size-3" />
-                    {warningCount + errorCount} validation {warningCount + errorCount === 1 ? "issue" : "issues"}
+                    {warningCount + errorCount} validation{" "}
+                    {warningCount + errorCount === 1 ? "issue" : "issues"}
                   </span>
                 )}
               </div>
@@ -1165,7 +1220,7 @@ function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
                 isLast
                   ? "font-semibold text-foreground"
                   : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                !item.onClick && "cursor-default"
+                !item.onClick && "cursor-default",
               )}
             >
               {item.label}
@@ -1225,18 +1280,14 @@ function SettingsTab({
   onDeleteNode: () => void
   onToggleCompositeLock: () => void
   onSetCompositeColor: (hue: number | undefined) => void
-  onAddPromotedPort: (spec: {
-    internalNode: string
-    internalPort: string
-    label: string
-  }) => void
+  onAddPromotedPort: (spec: { internalNode: string; internalPort: string; label: string }) => void
   onRemovePromotedPort: (portId: string) => void
   onAddZone: (nodeId: string) => void
   onRemoveZone: (nodeId: string, portId: string) => void
   onResizeZone: (
     nodeId: string,
     portId: string,
-    range: { fromNote: number; toNote: number }
+    range: { fromNote: number; toNote: number },
   ) => void
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
@@ -1292,9 +1343,7 @@ function MultiSelectInfo({ count }: { count: number }) {
   return (
     <div className="flex h-full flex-col gap-3 text-xs">
       <div>
-        <div className="text-sm font-semibold text-foreground">
-          {count} nodes selected
-        </div>
+        <div className="text-sm font-semibold text-foreground">{count} nodes selected</div>
         <div className="text-[11px] text-muted-foreground">
           Drag any selected node to move them all together.
         </div>
@@ -1378,8 +1427,8 @@ function GlobalSettings({
           Post-mix FX
         </div>
         <div className="rounded-md border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-          <span className="font-medium text-foreground">+ Add post-mix effect</span>
-          {" "}— inserts a master EQ, limiter, or reverb after the main bus.
+          <span className="font-medium text-foreground">+ Add post-mix effect</span> — inserts a
+          master EQ, limiter, or reverb after the main bus.
         </div>
       </div>
       <div className="flex flex-col gap-2">
@@ -1394,10 +1443,12 @@ function GlobalSettings({
                 ? "text-destructive"
                 : warningCount > 0
                   ? "text-amber-500"
-                  : "text-emerald-500"
+                  : "text-emerald-500",
             )}
           >
-            {errorCount + warningCount === 0 ? "All clear ✓" : `${warningCount} warn · ${errorCount} err`}
+            {errorCount + warningCount === 0
+              ? "All clear ✓"
+              : `${warningCount} warn · ${errorCount} err`}
           </span>
         </div>
         {issues.length === 0 ? (
@@ -1415,20 +1466,18 @@ function GlobalSettings({
                   "flex items-start gap-2 rounded-md border px-2 py-1.5 text-left hover:bg-muted/40",
                   issue.level === "warning"
                     ? "border-amber-500/40 bg-amber-500/[0.06]"
-                    : "border-destructive/40 bg-destructive/[0.06]"
+                    : "border-destructive/40 bg-destructive/[0.06]",
                 )}
               >
                 <AlertTriangle
                   className={cn(
                     "size-3.5 shrink-0",
-                    issue.level === "warning" ? "text-amber-500" : "text-destructive"
+                    issue.level === "warning" ? "text-amber-500" : "text-destructive",
                   )}
                 />
                 <div className="min-w-0">
                   <div className="truncate text-xs font-semibold">{node.name}</div>
-                  <div className="truncate text-[10px] text-muted-foreground">
-                    {issue.message}
-                  </div>
+                  <div className="truncate text-[10px] text-muted-foreground">{issue.message}</div>
                 </div>
               </button>
             ))}
@@ -1456,7 +1505,7 @@ function NodeSettings({
   onResizeZone: (
     nodeId: string,
     portId: string,
-    range: { fromNote: number; toNote: number }
+    range: { fromNote: number; toNote: number },
   ) => void
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
@@ -1490,9 +1539,7 @@ function NodeSettings({
                     className="size-2 shrink-0 rounded-full"
                     style={{
                       background:
-                        p.signal === "midi"
-                          ? "oklch(0.7 0.15 280)"
-                          : "oklch(0.7 0.15 145)",
+                        p.signal === "midi" ? "oklch(0.7 0.15 280)" : "oklch(0.7 0.15 145)",
                     }}
                   />
                   <span className="text-[10px] text-muted-foreground">
@@ -1518,10 +1565,7 @@ function NodeSettings({
       </div>
       <div className="min-w-0">
         {isPlugin ? (
-          <PluginUIDock
-            node={node}
-            onPick={(choice) => onSetNodeConfig(node.id, choice)}
-          />
+          <PluginUIDock node={node} onPick={(choice) => onSetNodeConfig(node.id, choice)} />
         ) : (
           <KindConfig
             node={node}
@@ -1700,9 +1744,21 @@ function KindConfig({
       )}
       {node.kind === "audio.eq" && (
         <div className="rounded-md border bg-background">
-          <SettingRow label="Low (80 Hz shelf)" value={`${(node.config?.low as number) ?? 0} dB`} slider />
-          <SettingRow label="Mid (1.2 kHz peaking)" value={`${(node.config?.mid as number) ?? 0} dB`} slider />
-          <SettingRow label="High (8 kHz shelf)" value={`${(node.config?.high as number) ?? 0} dB`} slider />
+          <SettingRow
+            label="Low (80 Hz shelf)"
+            value={`${(node.config?.low as number) ?? 0} dB`}
+            slider
+          />
+          <SettingRow
+            label="Mid (1.2 kHz peaking)"
+            value={`${(node.config?.mid as number) ?? 0} dB`}
+            slider
+          />
+          <SettingRow
+            label="High (8 kHz shelf)"
+            value={`${(node.config?.high as number) ?? 0} dB`}
+            slider
+          />
           <SettingRow label="Output trim" value="0.0 dB" slider />
         </div>
       )}
@@ -1762,12 +1818,10 @@ function KeyboardZoneEditor({
   onSetZoneColor: (portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (portId: string, follows: boolean) => void
 }) {
-  const zonePorts = node.ports.filter(
-    (p) => p.direction === "out" && p.config?.kind === "zone"
+  const zonePorts = node.ports.filter((p) => p.direction === "out" && p.config?.kind === "zone")
+  const [learning, setLearning] = React.useState<{ portId: string; field: "low" | "high" } | null>(
+    null,
   )
-  const [learning, setLearning] = React.useState<
-    { portId: string; field: "low" | "high" } | null
-  >(null)
   return (
     <div className="flex flex-col gap-2">
       <div className="rounded-md border bg-background">
@@ -1792,9 +1846,8 @@ function KeyboardZoneEditor({
 
       {zonePorts.length === 0 ? (
         <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-          No zones yet — the whole keyboard sends to the single MIDI out.
-          Add a zone to split the range and route different parts to
-          different sounds.
+          No zones yet — the whole keyboard sends to the single MIDI out. Add a zone to split the
+          range and route different parts to different sounds.
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -1808,10 +1861,7 @@ function KeyboardZoneEditor({
             }
             const isLearning = learning?.portId === p.id
             return (
-              <div
-                key={p.id}
-                className="flex flex-col gap-1.5 rounded-md border bg-background p-2"
-              >
+              <div key={p.id} className="flex flex-col gap-1.5 rounded-md border bg-background p-2">
                 <div className="flex items-center gap-2">
                   <span
                     className="size-2.5 shrink-0 rounded-full"
@@ -1844,7 +1894,7 @@ function KeyboardZoneEditor({
                       setLearning((l) =>
                         l?.portId === p.id && l.field === "low"
                           ? null
-                          : { portId: p.id, field: "low" }
+                          : { portId: p.id, field: "low" },
                       )
                     }
                     onChange={(v) =>
@@ -1862,7 +1912,7 @@ function KeyboardZoneEditor({
                       setLearning((l) =>
                         l?.portId === p.id && l.field === "high"
                           ? null
-                          : { portId: p.id, field: "high" }
+                          : { portId: p.id, field: "high" },
                       )
                     }
                     onChange={(v) =>
@@ -1884,7 +1934,7 @@ function KeyboardZoneEditor({
                       onClick={() => onSetZoneColor(p.id, undefined)}
                       className={cn(
                         "h-5 rounded border px-1.5 text-[9px] hover:bg-muted/40",
-                        cfg.colorHue === undefined && "border-primary/40 bg-primary/5"
+                        cfg.colorHue === undefined && "border-primary/40 bg-primary/5",
                       )}
                     >
                       Auto
@@ -1896,7 +1946,7 @@ function KeyboardZoneEditor({
                         onClick={() => onSetZoneColor(p.id, h)}
                         className={cn(
                           "size-5 rounded border hover:scale-110 transition-transform",
-                          cfg.colorHue === h && "ring-2 ring-primary"
+                          cfg.colorHue === h && "ring-2 ring-primary",
                         )}
                         style={{ background: hueToColor(h) }}
                         title={`Zone hue ${h}`}
@@ -1938,9 +1988,7 @@ function NoteStepperWithLearn({
   const clamp = (v: number) => Math.max(0, Math.min(127, v))
   return (
     <div className="flex items-center gap-0.5 rounded border bg-card px-1">
-      <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span>
       <button
         type="button"
         onClick={() => onChange(clamp(value - 1))}
@@ -1948,9 +1996,7 @@ function NoteStepperWithLearn({
       >
         −
       </button>
-      <span className="min-w-[28px] text-center font-mono text-[10px]">
-        {noteNameFor(value)}
-      </span>
+      <span className="min-w-[28px] text-center font-mono text-[10px]">{noteNameFor(value)}</span>
       <button
         type="button"
         onClick={() => onChange(clamp(value + 1))}
@@ -1961,12 +2007,16 @@ function NoteStepperWithLearn({
       <button
         type="button"
         onClick={onToggleLearn}
-        title={learning ? "Cancel learn — press to stop" : "Press to learn the next note from your controller"}
+        title={
+          learning
+            ? "Cancel learn — press to stop"
+            : "Press to learn the next note from your controller"
+        }
         className={cn(
           "ml-0.5 rounded px-1.5 text-[9px] font-semibold uppercase tracking-wider",
           learning
             ? "bg-primary text-primary-foreground animate-pulse"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
         )}
       >
         {learning ? "Learn…" : "Learn"}
@@ -1975,15 +2025,7 @@ function NoteStepperWithLearn({
   )
 }
 
-function SettingRow({
-  label,
-  value,
-  slider,
-}: {
-  label: string
-  value: string
-  slider?: boolean
-}) {
+function SettingRow({ label, value, slider }: { label: string; value: string; slider?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b px-3 py-1.5 last:border-b-0">
       <span className="truncate text-[11px] text-muted-foreground">{label}</span>
@@ -1993,9 +2035,7 @@ function SettingRow({
             <span className="block h-full w-1/2 rounded-full bg-primary/60" />
           </span>
         )}
-        <span className="truncate font-mono text-[11px] text-foreground">
-          {value}
-        </span>
+        <span className="truncate font-mono text-[11px] text-foreground">{value}</span>
       </div>
     </div>
   )
@@ -2008,8 +2048,7 @@ function ParamKnob({ label, value }: { label: string; value: number }) {
       <div
         className="relative size-9 rounded-full"
         style={{
-          background:
-            "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
+          background: "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
           boxShadow:
             "0 2px 4px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
         }}
@@ -2055,7 +2094,7 @@ function WireSettings({
             onClick={() => onSetColor(undefined)}
             className={cn(
               "flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs hover:bg-muted/40",
-              !wire.color && "border-primary/40 bg-primary/5"
+              !wire.color && "border-primary/40 bg-primary/5",
             )}
           >
             <RotateCcw className="size-3" />
@@ -2068,7 +2107,7 @@ function WireSettings({
               onClick={() => onSetColor(c.color)}
               className={cn(
                 "grid size-7 place-items-center rounded-md border hover:scale-110",
-                wire.color === c.color && "ring-2 ring-primary"
+                wire.color === c.color && "ring-2 ring-primary",
               )}
               title={c.label}
               style={{ background: c.color }}
@@ -2077,8 +2116,14 @@ function WireSettings({
         </div>
       </div>
       <div className="rounded-md border bg-muted/20 px-3 py-2 text-[10px] text-muted-foreground">
-        Connects <span className="font-mono text-foreground">{wire.fromNode}:{wire.fromPort}</span>{" "}
-        → <span className="font-mono text-foreground">{wire.toNode}:{wire.toPort}</span>
+        Connects{" "}
+        <span className="font-mono text-foreground">
+          {wire.fromNode}:{wire.fromPort}
+        </span>{" "}
+        →{" "}
+        <span className="font-mono text-foreground">
+          {wire.toNode}:{wire.toPort}
+        </span>
       </div>
       <button
         type="button"
@@ -2113,24 +2158,20 @@ function CompositeSettings({
   graph: PatchGraph
   onToggleLock: () => void
   onSetColor: (hue: number | undefined) => void
-  onAddPromotedPort: (spec: {
-    internalNode: string
-    internalPort: string
-    label: string
-  }) => void
+  onAddPromotedPort: (spec: { internalNode: string; internalPort: string; label: string }) => void
   onRemovePromotedPort: (portId: string) => void
 }) {
   const memberNodes = graph.nodes.filter((n) => composite.contains.includes(n.id))
   const promotedKey = (nid: string, pid: string) => `${nid}:${pid}`
   const alreadyPromoted = new Set(
-    composite.promotedPorts.map((p) => promotedKey(p.internalNode, p.internalPort))
+    composite.promotedPorts.map((p) => promotedKey(p.internalNode, p.internalPort)),
   )
   const candidates = memberNodes.flatMap((n) =>
     n.ports.map((p) => ({
       node: n,
       port: p,
       taken: alreadyPromoted.has(promotedKey(n.id, p.id)),
-    }))
+    })),
   )
   return (
     <div className="grid h-full grid-cols-[260px_1fr] gap-4 text-xs">
@@ -2162,7 +2203,7 @@ function CompositeSettings({
               onClick={() => onSetColor(undefined)}
               className={cn(
                 "flex h-7 items-center gap-1.5 rounded-md border px-2 text-[10px] hover:bg-muted/40",
-                composite.colorHue === undefined && "border-primary/40 bg-primary/5"
+                composite.colorHue === undefined && "border-primary/40 bg-primary/5",
               )}
             >
               Auto
@@ -2174,7 +2215,7 @@ function CompositeSettings({
                 onClick={() => onSetColor(c.hue)}
                 className={cn(
                   "size-6 rounded-md border hover:scale-110 transition-transform",
-                  composite.colorHue === c.hue && "ring-2 ring-primary"
+                  composite.colorHue === c.hue && "ring-2 ring-primary",
                 )}
                 title={c.label}
                 style={{ background: `oklch(0.7 0.18 ${c.hue})` }}
@@ -2191,8 +2232,7 @@ function CompositeSettings({
 
         {composite.promotedPorts.length === 0 && (
           <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-            No promoted ports yet. Add one below to surface an internal port
-            on the composite frame.
+            No promoted ports yet. Add one below to surface an internal port on the composite frame.
           </div>
         )}
         <div className="flex flex-col gap-1">
@@ -2207,10 +2247,7 @@ function CompositeSettings({
                 <span
                   className="size-2 shrink-0 rounded-full"
                   style={{
-                    background:
-                      p.signal === "midi"
-                        ? "oklch(0.7 0.15 280)"
-                        : "oklch(0.7 0.15 145)",
+                    background: p.signal === "midi" ? "oklch(0.7 0.15 280)" : "oklch(0.7 0.15 145)",
                   }}
                 />
                 <span className="text-[10px] text-muted-foreground">
@@ -2257,9 +2294,7 @@ function CompositeSettings({
                     className="size-2 shrink-0 rounded-full"
                     style={{
                       background:
-                        c.port.signal === "midi"
-                          ? "oklch(0.7 0.15 280)"
-                          : "oklch(0.7 0.15 145)",
+                        c.port.signal === "midi" ? "oklch(0.7 0.15 280)" : "oklch(0.7 0.15 145)",
                     }}
                   />
                   <span className="text-[10px] text-muted-foreground">
@@ -2395,7 +2430,7 @@ function ChannelStrip({
     <div
       className={cn(
         "flex w-16 flex-col items-center gap-2 rounded-md border bg-background px-2 py-2",
-        muted && "opacity-50"
+        muted && "opacity-50",
       )}
       style={{
         borderTopColor: `oklch(0.7 0.18 ${cls.hue})`,
@@ -2412,7 +2447,9 @@ function ChannelStrip({
             onClick={onToggleSolo}
             className={cn(
               "grid size-5 place-items-center rounded text-[9px] font-bold",
-              solo ? "bg-yellow-400 text-black" : "bg-muted/40 text-muted-foreground hover:text-foreground"
+              solo
+                ? "bg-yellow-400 text-black"
+                : "bg-muted/40 text-muted-foreground hover:text-foreground",
             )}
             title="Solo"
           >
@@ -2423,7 +2460,9 @@ function ChannelStrip({
             onClick={onToggleMute}
             className={cn(
               "grid size-5 place-items-center rounded text-[9px] font-bold",
-              muted ? "bg-red-500 text-white" : "bg-muted/40 text-muted-foreground hover:text-foreground"
+              muted
+                ? "bg-red-500 text-white"
+                : "bg-muted/40 text-muted-foreground hover:text-foreground",
             )}
             title="Mute"
           >
@@ -2431,7 +2470,10 @@ function ChannelStrip({
           </button>
         </div>
       )}
-      <div className="relative my-1 flex w-3 flex-1 items-center rounded-full bg-muted/40" style={{ minHeight: 100 }}>
+      <div
+        className="relative my-1 flex w-3 flex-1 items-center rounded-full bg-muted/40"
+        style={{ minHeight: 100 }}
+      >
         <div
           className="absolute left-1/2 size-3.5 -translate-x-1/2 rounded-sm bg-foreground/40"
           style={{ top: "30%" }}

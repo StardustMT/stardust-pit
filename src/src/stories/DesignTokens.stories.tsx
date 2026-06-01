@@ -55,10 +55,7 @@ export const Colors: Story = {
         <div className="grid grid-cols-5 gap-3">
           {CHARTS.map((token) => (
             <div key={token} className="rounded-lg border bg-card p-3">
-              <div
-                className="h-14 w-full rounded"
-                style={{ background: `var(--${token})` }}
-              />
+              <div className="h-14 w-full rounded" style={{ background: `var(--${token})` }} />
               <div className="mt-2 font-mono text-xs">--{token}</div>
             </div>
           ))}
@@ -90,9 +87,9 @@ export const Typography: Story = {
       <div>
         <div className="text-xs text-muted-foreground">body</div>
         <p className="max-w-prose">
-          Stardust is a virtual instrument host built for the stage. It loads VST3 and CLAP
-          plugins, handles MIDI and audio routing, and wraps them in a control surface designed
-          for live performance.
+          Stardust is a virtual instrument host built for the stage. It loads VST3 and CLAP plugins,
+          handles MIDI and audio routing, and wraps them in a control surface designed for live
+          performance.
         </p>
       </div>
       <div>

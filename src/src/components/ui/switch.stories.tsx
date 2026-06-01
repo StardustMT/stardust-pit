@@ -2,7 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react"
 import { Switch } from "./switch"
 import { Label } from "./label"
 
-const meta: Meta<typeof Switch> = { title: "UI/Switch", component: Switch, parameters: { layout: "centered" } }
+const meta: Meta<typeof Switch> = {
+  title: "UI/Switch",
+  component: Switch,
+  parameters: { layout: "centered" },
+}
 export default meta
 
 export const PerformanceLock: StoryObj<typeof Switch> = {

@@ -35,13 +35,17 @@ export const LivePlaceholder: Story = {
           />
           <div className="grid place-items-center rounded-xl border border-primary/30 bg-card/40 p-6 text-center text-muted-foreground">
             <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-primary">Live · fullscreen</div>
-              <div className="mt-2 text-3xl font-semibold tracking-tight">Little Shop · Skid Row</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-primary">
+                Live · fullscreen
+              </div>
+              <div className="mt-2 text-3xl font-semibold tracking-tight">
+                Little Shop · Skid Row
+              </div>
               <div className="mt-1 text-lg">Verse split</div>
               <div className="mt-8 max-w-md text-sm leading-relaxed">
-                The user's configured Live canvas renders here. A real composed example
-                (keyboard + pedals + favourites + click + meters) lands in a future
-                iteration once the layout-editor canvas is wired.
+                The user's configured Live canvas renders here. A real composed example (keyboard +
+                pedals + favourites + click + meters) lands in a future iteration once the
+                layout-editor canvas is wired.
               </div>
             </div>
           </div>

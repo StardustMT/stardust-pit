@@ -14,7 +14,14 @@ export const PitLayout: StoryObj<typeof LayoutCanvasGrid> = {
       <LayoutCanvasGrid
         selectedId="patch-list"
         widgets={[
-          { id: "label", label: "Show / Song / Patch label", col: 1, row: 1, colSpan: 6, rowSpan: 1 },
+          {
+            id: "label",
+            label: "Show / Song / Patch label",
+            col: 1,
+            row: 1,
+            colSpan: 6,
+            rowSpan: 1,
+          },
           { id: "next", label: "Next Patch preview", col: 7, row: 1, colSpan: 4, rowSpan: 1 },
           { id: "perf", label: "Performance Lock", col: 11, row: 1, colSpan: 2, rowSpan: 1 },
           { id: "notes", label: "Show notes", col: 1, row: 2, colSpan: 7, rowSpan: 4 },

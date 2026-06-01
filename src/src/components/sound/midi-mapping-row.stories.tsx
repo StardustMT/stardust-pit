@@ -44,16 +44,8 @@ export const TypicalList: StoryObj<typeof MidiMappingRow> = {
         overridden
         range="20 → 100 · exp"
       />
-      <MidiMappingRow
-        source="FCB1010 FS1"
-        target="Patch advance"
-        inheritedFrom="Show"
-      />
-      <MidiMappingRow
-        source="FCB1010 FS3"
-        target="Tap tempo"
-        inheritedFrom="Song"
-      />
+      <MidiMappingRow source="FCB1010 FS1" target="Patch advance" inheritedFrom="Show" />
+      <MidiMappingRow source="FCB1010 FS3" target="Tap tempo" inheritedFrom="Song" />
     </div>
   ),
 }

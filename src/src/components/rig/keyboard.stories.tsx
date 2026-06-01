@@ -99,9 +99,7 @@ export const Range61: Story = {
     <InteractiveKeyboard
       fromNote={36}
       toNote={84}
-      initialZones={[
-        { id: "rhodes", label: "Rhodes EP (Launchkey)", fromNote: 36, toNote: 84 },
-      ]}
+      initialZones={[{ id: "rhodes", label: "Rhodes EP (Launchkey)", fromNote: 36, toNote: 84 }]}
     />
   ),
 }

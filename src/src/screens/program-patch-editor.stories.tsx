@@ -47,13 +47,7 @@ function StoryFrame({
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
 }) {
   const [graph, setGraph] = React.useState(initialGraph)
-  return (
-    <PatchEditor
-      {...rest}
-      graph={graph}
-      onGraphChange={setGraph}
-    />
-  )
+  return <PatchEditor {...rest} graph={graph} onGraphChange={setGraph} />
 }
 
 export const CasualPatch: Story = {

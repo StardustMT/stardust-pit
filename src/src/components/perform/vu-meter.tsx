@@ -1,4 +1,3 @@
-import * as React from "react"
 import { cn } from "@/lib/utils"
 
 export interface VuMeterProps {
@@ -89,13 +88,7 @@ export interface StereoVuMeterProps {
   className?: string
 }
 
-export function StereoVuMeter({
-  left,
-  right,
-  leftPeak,
-  rightPeak,
-  className,
-}: StereoVuMeterProps) {
+export function StereoVuMeter({ left, right, leftPeak, rightPeak, className }: StereoVuMeterProps) {
   return (
     <div className={cn("flex items-end gap-1", className)}>
       <VuMeter levelDb={left} peakDb={leftPeak} />

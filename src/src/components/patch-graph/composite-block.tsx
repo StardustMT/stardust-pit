@@ -2,7 +2,12 @@ import * as React from "react"
 import { Lock, Unlock } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { nodeBounds } from "./patch-node"
-import { SIGNAL_DEFAULT_COLORS, type CompositeBlock, type GraphNode, type PromotedPort } from "./_types"
+import {
+  SIGNAL_DEFAULT_COLORS,
+  type CompositeBlock,
+  type GraphNode,
+  type PromotedPort,
+} from "./_types"
 
 /**
  * Padding around the contained nodes. Larger on left/right than top/bottom
@@ -83,7 +88,7 @@ export function CompositeBlockFrame({
     <div
       className={cn(
         "pointer-events-none absolute rounded-xl border-2",
-        selected && "ring-2 ring-primary/40"
+        selected && "ring-2 ring-primary/40",
       )}
       style={{
         left: rect.x,
@@ -111,7 +116,7 @@ export function CompositeBlockFrame({
         className={cn(
           "pointer-events-auto absolute -top-[14px] left-3 flex items-center gap-1.5",
           "rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shadow-sm",
-          "bg-card text-foreground cursor-grab hover:brightness-110 active:cursor-grabbing select-none"
+          "bg-card text-foreground cursor-grab hover:brightness-110 active:cursor-grabbing select-none",
         )}
         style={{ borderColor }}
         onPointerDown={(e) => {
@@ -143,11 +148,7 @@ export function CompositeBlockFrame({
           style={{ color: borderColor }}
           aria-label={composite.locked ? "Unlock composite" : "Lock composite"}
         >
-          {composite.locked ? (
-            <Lock className="size-3" />
-          ) : (
-            <Unlock className="size-3" />
-          )}
+          {composite.locked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
         </span>
         <span className="normal-case">{composite.name}</span>
         <span className="text-muted-foreground">·</span>
@@ -248,7 +249,8 @@ function PromotedPortHandle({
   onPortPointerUp?: (portId: string) => void
 }) {
   const color = SIGNAL_DEFAULT_COLORS[port.signal]
-  const cursor = port.direction === "out" ? "cursor-crosshair" : connected ? "cursor-pointer" : "cursor-default"
+  const cursor =
+    port.direction === "out" ? "cursor-crosshair" : connected ? "cursor-pointer" : "cursor-default"
   return (
     <>
       {/* Interactive circle: straddles the border */}
@@ -257,7 +259,7 @@ function PromotedPortHandle({
         className={cn(
           "pointer-events-auto absolute z-10 block size-3.5 rounded-full border-2 border-card transition-transform",
           highlighted && "scale-150 ring-2 ring-primary/50",
-          cursor
+          cursor,
         )}
         style={{
           [side === "left" ? "left" : "right"]: -7,
@@ -323,7 +325,7 @@ function computeBounds(nodes: GraphNode[]): {
 export function compositePortPosition(
   composite: CompositeBlock,
   memberNodes: GraphNode[],
-  portId: string
+  portId: string,
 ): { x: number; y: number } | null {
   if (memberNodes.length === 0) return null
   const port = composite.promotedPorts.find((p) => p.id === portId)

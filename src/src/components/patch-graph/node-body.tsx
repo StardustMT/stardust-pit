@@ -6,11 +6,9 @@ import {
   Footprints,
   Grid3x3,
   Piano,
-  Power,
   Settings2,
   Sliders,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 import type { GraphNode } from "./_types"
 import { classOf, CLASS_COLORS, getPluginChoice } from "./_types"
 
@@ -109,9 +107,7 @@ function SwitchBody({ node }: { node: GraphNode }) {
   return (
     <div className="flex flex-col items-center gap-1 py-2">
       <Footprints className="size-5 text-muted-foreground" />
-      <span className="text-[10px] text-muted-foreground">
-        {isSustain ? "CC 64" : "momentary"}
-      </span>
+      <span className="text-[10px] text-muted-foreground">{isSustain ? "CC 64" : "momentary"}</span>
     </div>
   )
 }
@@ -150,8 +146,7 @@ function TransposeBody({ node }: { node: GraphNode }) {
 }
 
 function MixBody({ count, signal }: { count: number; signal: "midi" | "audio" }) {
-  const color =
-    signal === "midi" ? "oklch(0.7 0.15 280)" : "oklch(0.7 0.15 145)"
+  const color = signal === "midi" ? "oklch(0.7 0.15 280)" : "oklch(0.7 0.15 145)"
   return (
     <div className="flex items-center justify-center gap-0.5 py-2">
       {Array.from({ length: count }).map((_, i) => (
@@ -186,9 +181,7 @@ function PluginBody({ node }: { node: GraphNode }) {
       </button>
       <div className="flex items-baseline justify-between gap-1 px-1 text-[10px]">
         <span className="text-muted-foreground">Vendor</span>
-        <span className="truncate font-mono text-foreground">
-          {choice?.pluginVendor ?? "—"}
-        </span>
+        <span className="truncate font-mono text-foreground">{choice?.pluginVendor ?? "—"}</span>
       </div>
     </div>
   )
@@ -240,8 +233,7 @@ function LabeledKnob({ label, value }: { label: string; value: number }) {
       <div
         className="relative size-6 rounded-full"
         style={{
-          background:
-            "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
+          background: "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
           boxShadow:
             "0 2px 4px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
         }}
@@ -288,8 +280,7 @@ function Meter({ level }: { level: number }) {
         className="absolute inset-x-0 bottom-0"
         style={{
           height: `${Math.round(level * 100)}%`,
-          background:
-            "linear-gradient(180deg, oklch(0.75 0.18 50), oklch(0.7 0.18 145))",
+          background: "linear-gradient(180deg, oklch(0.75 0.18 50), oklch(0.7 0.18 145))",
         }}
       />
     </div>

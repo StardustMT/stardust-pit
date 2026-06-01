@@ -12,8 +12,9 @@
     "ui:build": "bun --filter stardust-pit-ui build",
     "ui:storybook": "bun --filter stardust-pit-ui storybook",
     "ui:build-storybook": "bun --filter stardust-pit-ui build-storybook",
-    "ui:lint": "bun --filter stardust-pit-ui lint",
-    "ui:typecheck": "bun --filter stardust-pit-ui typecheck",
+    "ui:eslint": "bun --filter stardust-pit-ui eslint",
+    "ui:prettier": "bun --filter stardust-pit-ui prettier",
+    "ui:tsc": "bun --filter stardust-pit-ui tsc",
     "ui:test": "bun --filter stardust-pit-ui test"
   },
   "devDependencies": {

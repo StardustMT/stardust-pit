@@ -21,8 +21,8 @@
 use serde::{Deserialize, Serialize};
 use stardust_core::audio;
 use stardust_core::midi::{self, MidiMessage};
-use stardust_core::show::{Patch, ShowDocument, ShowValidationError};
 use stardust_core::plugin::clap;
+use stardust_core::show::{Patch, ShowDocument, ShowValidationError};
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -93,9 +93,7 @@ pub struct ClapScanResult {
 }
 
 #[tauri::command]
-pub async fn list_clap_plugins(
-    lock: State<'_, DiscoveryLock>,
-) -> Result<ClapScanResult, String> {
+pub async fn list_clap_plugins(lock: State<'_, DiscoveryLock>) -> Result<ClapScanResult, String> {
     let _guard = lock.0.lock().await;
     tokio::task::spawn_blocking(|| {
         let paths = clap::default_clap_search_paths();
@@ -252,10 +250,7 @@ pub fn engine_start_from_patch(
 /// engine isn't running — the UI is expected to gate its keyboard on the
 /// engine's status, but a stray event isn't an error.
 #[tauri::command]
-pub fn engine_send_midi(
-    msg: UiMidiMessage,
-    engine: State<'_, EngineHandle>,
-) -> Result<(), String> {
+pub fn engine_send_midi(msg: UiMidiMessage, engine: State<'_, EngineHandle>) -> Result<(), String> {
     engine.send(EngineCommand::SendMidi(msg.into()))
 }
 
@@ -273,12 +268,20 @@ pub enum UiMidiMessage {
 impl From<UiMidiMessage> for MidiMessage {
     fn from(m: UiMidiMessage) -> Self {
         match m {
-            UiMidiMessage::NoteOn { channel, note, velocity } => MidiMessage::NoteOn {
+            UiMidiMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } => MidiMessage::NoteOn {
                 channel: channel & 0x0F,
                 note: note & 0x7F,
                 velocity: velocity & 0x7F,
             },
-            UiMidiMessage::NoteOff { channel, note, velocity } => MidiMessage::NoteOff {
+            UiMidiMessage::NoteOff {
+                channel,
+                note,
+                velocity,
+            } => MidiMessage::NoteOff {
                 channel: channel & 0x0F,
                 note: note & 0x7F,
                 velocity: velocity & 0x7F,

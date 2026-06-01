@@ -1,7 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import { Badge } from "./badge"
 
-const meta: Meta<typeof Badge> = { title: "UI/Badge", component: Badge, parameters: { layout: "centered" } }
+const meta: Meta<typeof Badge> = {
+  title: "UI/Badge",
+  component: Badge,
+  parameters: { layout: "centered" },
+}
 export default meta
 
 export const Statuses: StoryObj<typeof Badge> = {

@@ -102,12 +102,10 @@ export function ContextMenu({ anchor, sections, onClose }: ContextMenuProps) {
               }}
               className={cn(
                 "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors",
-                item.disabled
-                  ? "cursor-not-allowed opacity-40"
-                  : "hover:bg-muted/60",
+                item.disabled ? "cursor-not-allowed opacity-40" : "hover:bg-muted/60",
                 item.variant === "danger" && !item.disabled
                   ? "text-destructive hover:bg-destructive/10"
-                  : ""
+                  : "",
               )}
             >
               {item.icon ? (
@@ -117,15 +115,13 @@ export function ContextMenu({ anchor, sections, onClose }: ContextMenuProps) {
               )}
               <span className="flex-1">{item.label}</span>
               {item.shortcut && (
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {item.shortcut}
-                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">{item.shortcut}</span>
               )}
             </button>
           ))}
         </React.Fragment>
       ))}
     </div>,
-    document.body
+    document.body,
   )
 }

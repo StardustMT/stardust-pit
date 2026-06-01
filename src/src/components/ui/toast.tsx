@@ -27,7 +27,8 @@ const toastVariants = cva(
     variants: {
       variant: {
         default: "border bg-background text-foreground",
-        destructive: "destructive group border-destructive bg-destructive text-destructive-foreground",
+        destructive:
+          "destructive group border-destructive bg-destructive text-destructive-foreground",
         warning: "border-amber-500/30 bg-amber-500/10 text-amber-200",
       },
     },
@@ -81,11 +82,4 @@ const ToastDescription = React.forwardRef<
 ))
 ToastDescription.displayName = ToastPrimitive.Description.displayName
 
-export {
-  Toast,
-  ToastClose,
-  ToastDescription,
-  ToastProvider,
-  ToastTitle,
-  ToastViewport,
-}
+export { Toast, ToastClose, ToastDescription, ToastProvider, ToastTitle, ToastViewport }

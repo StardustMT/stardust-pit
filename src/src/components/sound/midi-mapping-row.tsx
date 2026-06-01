@@ -1,4 +1,3 @@
-import * as React from "react"
 import { ArrowRight, Trash2, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -42,9 +41,7 @@ export function MidiMappingRow({
         <span
           className={cn(
             "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase",
-            overridden
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground",
+            overridden ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
           )}
           title={overridden ? `Overrides ${inheritedFrom}` : `Inherited from ${inheritedFrom}`}
         >

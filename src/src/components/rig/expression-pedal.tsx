@@ -1,4 +1,3 @@
-import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -41,8 +40,7 @@ export function ExpressionPedal({
           className="absolute bottom-3 right-4 h-6 w-28 origin-bottom-right rounded-md"
           style={{
             transform: `rotate(${angle}deg)`,
-            background:
-              "linear-gradient(180deg, #5a5a62 0%, #383840 40%, #1c1c22 100%)",
+            background: "linear-gradient(180deg, #5a5a62 0%, #383840 40%, #1c1c22 100%)",
             boxShadow:
               "0 4px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -2px 0 rgba(0,0,0,0.3)",
             transition: "transform 80ms ease-out",

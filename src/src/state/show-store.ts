@@ -178,9 +178,7 @@ export const useShowStore = create<ShowState>()((set, get) => {
       set((s) => ({
         songs: s.songs.map((song) => ({
           ...song,
-          patches: song.patches.map((p) =>
-            p.id === patchId ? { ...p, graph } : p,
-          ),
+          patches: song.patches.map((p) => (p.id === patchId ? { ...p, graph } : p)),
         })),
         dirty: true,
       })),
@@ -202,9 +200,7 @@ export const useShowStore = create<ShowState>()((set, get) => {
     addSong: () =>
       set((s) => {
         const songId = nextSongId(s.songs)
-        const allPatchIds = new Set(
-          s.songs.flatMap((x) => x.patches.map((p) => p.id)),
-        )
+        const allPatchIds = new Set(s.songs.flatMap((x) => x.patches.map((p) => p.id)))
         const patchId = nextPatchId(songId, allPatchIds, 0)
         const newSong: SongWire = {
           id: songId,
@@ -230,9 +226,7 @@ export const useShowStore = create<ShowState>()((set, get) => {
       set((s) => {
         const song = s.songs.find((x) => x.id === songId)
         if (!song) return s
-        const allPatchIds = new Set(
-          s.songs.flatMap((x) => x.patches.map((p) => p.id)),
-        )
+        const allPatchIds = new Set(s.songs.flatMap((x) => x.patches.map((p) => p.id)))
         const patchId = nextPatchId(songId, allPatchIds, song.patches.length)
         const newPatch: PatchWire = {
           id: patchId,
@@ -242,9 +236,7 @@ export const useShowStore = create<ShowState>()((set, get) => {
         }
         return {
           songs: s.songs.map((x) =>
-            x.id === songId
-              ? { ...x, patches: [...x.patches, newPatch] }
-              : x,
+            x.id === songId ? { ...x, patches: [...x.patches, newPatch] } : x,
           ),
           currentPatchId: patchId,
           dirty: true,

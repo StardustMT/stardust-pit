@@ -1,4 +1,3 @@
-import * as React from "react"
 import { SIGNAL_DEFAULT_COLORS, type SignalKind } from "./_types"
 
 /** Axis-aligned obstacle the wire should route around. */
@@ -93,13 +92,7 @@ export function PatchWire({
           opacity={0.5}
         />
       )}
-      <path
-        d={path}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
+      <path d={path} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" />
     </g>
   )
 }
@@ -114,7 +107,7 @@ const SAMPLE_COUNT = 32
 function routedBezier(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  obstacles: ObstacleRect[]
+  obstacles: ObstacleRect[],
 ): string {
   // Step 1: try the straightforward path.
   const simpleControls = computeControls(from, to, from.y, to.y, false)
@@ -125,7 +118,7 @@ function routedBezier(
   // Step 2: check for collisions on the straight path.
   const samples = sampleBezier(from, to, simpleControls.c1, simpleControls.c2, SAMPLE_COUNT)
   const colliding = obstacles.filter((obs) =>
-    samples.some((s) => pointInRect(s, expand(obs, OBSTACLE_PADDING)))
+    samples.some((s) => pointInRect(s, expand(obs, OBSTACLE_PADDING))),
   )
 
   if (colliding.length === 0) return simplePath
@@ -167,7 +160,7 @@ function routedAround(
   to: { x: number; y: number },
   clearY: number,
   side: "above" | "below",
-  obstacles: ObstacleRect[]
+  obstacles: ObstacleRect[],
 ): { path: string; clear: boolean } {
   // Solve for c1.y = c2.y such that the curve's midpoint Y lands at clearY.
   //   midpoint Y = 0.125*from.y + 0.375*c1.y + 0.375*c2.y + 0.125*to.y
@@ -185,7 +178,7 @@ function routedAround(
 
   const samples = sampleBezier(from, to, bent.c1, bent.c2, SAMPLE_COUNT)
   const clear = !obstacles.some((obs) =>
-    samples.some((s) => pointInRect(s, expand(obs, OBSTACLE_PADDING)))
+    samples.some((s) => pointInRect(s, expand(obs, OBSTACLE_PADDING))),
   )
   return { path, clear }
 }
@@ -195,7 +188,7 @@ function computeControls(
   to: { x: number; y: number },
   c1y: number,
   c2y: number,
-  bending: boolean
+  bending: boolean,
 ): { c1: { x: number; y: number }; c2: { x: number; y: number } } {
   const dx = to.x - from.x
   const tangent = Math.max(48, Math.abs(dx) * (bending ? 0.45 : 0.6))
@@ -209,7 +202,7 @@ function bezierString(
   from: { x: number; y: number },
   to: { x: number; y: number },
   c1: { x: number; y: number },
-  c2: { x: number; y: number }
+  c2: { x: number; y: number },
 ): string {
   return `M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}`
 }
@@ -219,7 +212,7 @@ function sampleBezier(
   p3: { x: number; y: number },
   p1: { x: number; y: number },
   p2: { x: number; y: number },
-  count: number
+  count: number,
 ): Array<{ x: number; y: number }> {
   const out: Array<{ x: number; y: number }> = new Array(count)
   for (let i = 0; i < count; i++) {

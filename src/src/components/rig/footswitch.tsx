@@ -1,4 +1,3 @@
-import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
@@ -33,8 +32,7 @@ function StompSwitch({ label, binding, active, className }: FootswitchProps) {
       <div
         className="relative grid h-24 w-24 place-items-center rounded-full"
         style={{
-          background:
-            "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
+          background: "radial-gradient(circle at 50% 30%, #4a4a52 0%, #232328 70%, #15151a 100%)",
           boxShadow:
             "0 8px 16px rgba(0,0,0,0.4), inset 0 -2px 0 0 rgba(0,0,0,0.5), inset 0 2px 0 0 rgba(255,255,255,0.05)",
         }}

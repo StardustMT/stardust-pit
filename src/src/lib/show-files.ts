@@ -13,13 +13,7 @@
 
 import { open, save } from "@tauri-apps/plugin-dialog"
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs"
-import {
-  asShowError,
-  loadShow,
-  saveShow,
-  type ShowDocument,
-  type ShowError,
-} from "@/lib/tauri"
+import { asShowError, loadShow, saveShow, type ShowDocument, type ShowError } from "@/lib/tauri"
 
 const SHOW_EXTENSION = "stardustshow"
 const SHOW_FILTER = { name: "Stardust show", extensions: [SHOW_EXTENSION] }
