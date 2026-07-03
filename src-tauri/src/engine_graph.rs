@@ -25,15 +25,21 @@
 //!
 //! ## What happens per audio block
 //!
-//! 1. Hardware MIDI + UI MIDI rings drain into the [`Plan`]'s scratch.
-//! 2. Those events get pushed into the first `source.keyboard` node's
-//!    outbox (if one exists in the graph).
-//! 3. Nodes execute in topological order. Each consumes its inbox
+//! 1. Hardware MIDI rings (already routed to a target source node by the
+//!    midir callbacks, see [`SourceFilterSpec`]) and the UI ring drain
+//!    into the [`Plan`]'s pending queue via [`Plan::inject_to`] /
+//!    [`Plan::inject_ui`].
+//! 2. If a panic was requested, note-offs for every tracked voice plus
+//!    all-channel controller resets are written straight into each
+//!    instrument node's inbox and the voice tracker clears.
+//! 3. Pending events land in their source node's outbox.
+//! 4. Nodes execute in topological order. Each consumes its inbox
 //!    (events) + its input edges (audio); produces its outbox (events)
 //!    + its output edges (audio).
-//! 4. After each node runs, its outbox is fanned out to all consumer
-//!    nodes' inboxes via the routing table, applying zone filters.
-//! 5. Sinks accumulate their input edges into the cpal interleaved
+//! 5. After each node runs, its outbox is fanned out to all consumer
+//!    nodes' inboxes via the routing table, applying zone filters. The
+//!    fan-out also maintains the per-instrument voice tracker.
+//! 6. Sinks accumulate their input edges into the cpal interleaved
 //!    output buffer.
 //!
 //! Every per-block step is allocation-free; everything sized for
@@ -64,6 +70,237 @@ pub const MIN_FRAMES: u32 = 32;
 pub const MAX_FRAMES: u32 = 2048;
 pub const EVENT_QUEUE: usize = 1024;
 pub const STEREO_CHANNELS: u32 = 2;
+
+// =============================================================================
+// Hardware MIDI bindings (per-source routing, stardust-pit#2)
+//
+// Each source node may carry a `hardwareBinding` object in its free-form
+// config (per ADR-0004 the strong typing lives here, not in the schema):
+//
+// ```json
+// {
+//   "hardwareBinding": {
+//     "deviceId": "12345" | null,      // opaque midir port id; null = any
+//     "deviceName": "Yamaha P-125",    // display + fallback match key
+//     "channel": 1..16 | null,          // null = any channel
+//     "noteRange": [21, 108] | null,
+//     "ccRange": [0, 127] | null
+//   }
+// }
+// ```
+//
+// A missing binding behaves as all-null: match any device, no filters —
+// which is the v0.5.0 single-device back-compat path. Device matching
+// happens on the engine thread when a device is opened (it owns the full
+// device list); per-event filtering happens in the midir callback via
+// [`EventFilter::accepts`], so the audio thread never sees an event that
+// isn't already addressed to a specific source node.
+// =============================================================================
+
+/// Device-independent per-event filter for one source node. What a source
+/// accepts is the intersection of its node kind's event classes (a sustain
+/// pedal is CC 64, a pitch wheel is pitch bend, …) and the optional
+/// channel / note-range / CC-range narrowing from its hardware binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventFilter {
+    kind: NodeKind,
+    /// 0-based MIDI channel; `None` = any.
+    channel: Option<u8>,
+    note_range: Option<(u8, u8)>,
+    cc_range: Option<(u8, u8)>,
+}
+
+impl EventFilter {
+    /// Does this source node want `msg`?
+    pub fn accepts(&self, msg: MidiMessage) -> bool {
+        if let Some(want) = self.channel {
+            match message_channel(msg) {
+                Some(ch) if ch == want => {}
+                _ => return false,
+            }
+        }
+        if !kind_accepts(self.kind, msg) {
+            return false;
+        }
+        if let Some((lo, hi)) = self.note_range {
+            if let MidiMessage::NoteOn { note, .. }
+            | MidiMessage::NoteOff { note, .. }
+            | MidiMessage::PolyAftertouch { note, .. } = msg
+            {
+                if note < lo || note > hi {
+                    return false;
+                }
+            }
+        }
+        if let Some((lo, hi)) = self.cc_range {
+            if let MidiMessage::ControlChange { cc, .. } = msg {
+                if cc < lo || cc > hi {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
+fn message_channel(msg: MidiMessage) -> Option<u8> {
+    match msg {
+        MidiMessage::NoteOn { channel, .. }
+        | MidiMessage::NoteOff { channel, .. }
+        | MidiMessage::ControlChange { channel, .. }
+        | MidiMessage::PitchBend { channel, .. }
+        | MidiMessage::ChannelPressure { channel, .. }
+        | MidiMessage::PolyAftertouch { channel, .. }
+        | MidiMessage::ProgramChange { channel, .. } => Some(channel),
+        MidiMessage::Other => None,
+    }
+}
+
+/// Event classes a source node kind represents. Keyboards are the full
+/// performance surface (everything); dedicated controls narrow to their
+/// message class so wiring a pedal next to a keyboard doesn't double
+/// note events into downstream instruments.
+fn kind_accepts(kind: NodeKind, msg: MidiMessage) -> bool {
+    use MidiMessage as M;
+    match kind {
+        NodeKind::SourceKeyboard => !matches!(msg, M::Other),
+        NodeKind::SourcePads => matches!(
+            msg,
+            M::NoteOn { .. } | M::NoteOff { .. } | M::PolyAftertouch { .. }
+        ),
+        NodeKind::SourceSwitch => matches!(
+            msg,
+            M::NoteOn { .. } | M::NoteOff { .. } | M::ControlChange { .. }
+        ),
+        NodeKind::SourceSustainPedal => matches!(msg, M::ControlChange { cc: 64, .. }),
+        NodeKind::SourceExpressionPedal => matches!(msg, M::ControlChange { cc: 11, .. }),
+        NodeKind::SourceModWheel => matches!(msg, M::ControlChange { cc: 1, .. }),
+        NodeKind::SourcePitchWheel => matches!(msg, M::PitchBend { .. }),
+        NodeKind::SourceKnob | NodeKind::SourceFader => matches!(msg, M::ControlChange { .. }),
+        _ => false,
+    }
+}
+
+/// One source node's hardware binding, resolved from its config. The
+/// engine thread uses the device identity to decide which opened MIDI
+/// connections feed the node; the [`EventFilter`] rides along into the
+/// midir callback for per-event narrowing.
+#[derive(Debug, Clone)]
+pub struct SourceFilterSpec {
+    /// Index of the source node in `PatchGraph::nodes` (== plan index).
+    pub node: usize,
+    /// Opaque midir port id this node is bound to. `None` = any device.
+    pub device_id: Option<String>,
+    /// Display name, used as the fallback match key when no connected
+    /// device carries `device_id` (ids are not stable on every OS).
+    pub device_name: Option<String>,
+    /// Per-event filter (kind class + channel / note / CC narrowing).
+    pub filter: EventFilter,
+}
+
+impl SourceFilterSpec {
+    /// Does this binding match a connected device `(id, name)`? Identity
+    /// wins; the display name is only consulted when no connected device
+    /// carries the bound id (`id_present_elsewhere` = the engine checked
+    /// the full device list).
+    pub fn matches_device(&self, id: &str, name: &str, id_present_elsewhere: bool) -> bool {
+        match &self.device_id {
+            None => true,
+            Some(bound) if bound == id => true,
+            Some(_) if id_present_elsewhere => false,
+            Some(_) => self.device_name.as_deref() == Some(name),
+        }
+    }
+}
+
+/// Resolve every source node's hardware binding from the patch graph.
+/// Nodes without a binding get the all-null spec (any device, kind-class
+/// filter only) — the v0.5.0 back-compat behavior.
+pub fn source_event_filters(graph: &PatchGraph) -> Vec<SourceFilterSpec> {
+    source_filters_for_nodes(&graph.nodes)
+}
+
+fn source_filters_for_nodes(nodes: &[GraphNode]) -> Vec<SourceFilterSpec> {
+    use stardust_core::patch::NodeClass;
+    let mut out = Vec::new();
+    for (i, n) in nodes.iter().enumerate() {
+        if n.kind.class() != NodeClass::Source {
+            continue;
+        }
+        let binding = n
+            .config
+            .as_ref()
+            .and_then(|c| c.get("hardwareBinding"))
+            .and_then(|b| b.as_object());
+        let get_str = |key: &str| -> Option<String> {
+            binding
+                .and_then(|b| b.get(key))
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        };
+        let get_range = |key: &str| -> Option<(u8, u8)> {
+            let arr = binding.and_then(|b| b.get(key))?.as_array()?;
+            let lo = arr.first()?.as_u64()?.min(127) as u8;
+            let hi = arr.get(1)?.as_u64()?.min(127) as u8;
+            Some((lo.min(hi), lo.max(hi)))
+        };
+        let channel = binding
+            .and_then(|b| b.get("channel"))
+            .and_then(|v| v.as_u64())
+            .filter(|c| (1..=16).contains(c))
+            .map(|c| (c - 1) as u8);
+        out.push(SourceFilterSpec {
+            node: i,
+            device_id: get_str("deviceId"),
+            device_name: get_str("deviceName"),
+            filter: EventFilter {
+                kind: n.kind,
+                channel,
+                note_range: get_range("noteRange"),
+                cc_range: get_range("ccRange"),
+            },
+        });
+    }
+    out
+}
+
+// =============================================================================
+// Voice tracker (stardust-pit#3)
+// =============================================================================
+
+const MIDI_CHANNELS: usize = 16;
+
+/// Active-note bitset for one instrument node: 16 channels × 128 notes.
+/// Fixed 256 bytes, updated inline during MIDI fan-out — no allocation,
+/// no locking, safe on the audio thread.
+#[derive(Clone)]
+struct VoiceBits([u128; MIDI_CHANNELS]);
+
+impl VoiceBits {
+    fn new() -> Self {
+        Self([0; MIDI_CHANNELS])
+    }
+
+    fn observe(&mut self, msg: MidiMessage) {
+        match msg {
+            MidiMessage::NoteOn { channel, note, .. } => {
+                self.0[(channel & 0x0F) as usize] |= 1u128 << (note & 0x7F);
+            }
+            MidiMessage::NoteOff { channel, note, .. } => {
+                self.0[(channel & 0x0F) as usize] &= !(1u128 << (note & 0x7F));
+            }
+            _ => {}
+        }
+    }
+
+    fn count(&self) -> usize {
+        self.0.iter().map(|c| c.count_ones() as usize).sum()
+    }
+
+    fn clear(&mut self) {
+        self.0 = [0; MIDI_CHANNELS];
+    }
+}
 
 // =============================================================================
 // Plan build errors
@@ -290,9 +527,6 @@ pub struct Plan {
     /// in the same order (they don't need a separate one in v0.8b
     /// because MIDI routing happens post-process per node).
     topo: Vec<NodeIndex>,
-    /// First `source.keyboard` node, if any. Hardware + UI MIDI gets
-    /// pushed into this node's outbox at the top of every block.
-    hw_midi_target: Option<NodeIndex>,
     /// Indices of every `sink.main-out` node. The runtime sums their
     /// input edges into the cpal interleaved output.
     sinks: Vec<NodeIndex>,
@@ -300,6 +534,20 @@ pub struct Plan {
     /// here once so route fan-out can mutate other nodes' inboxes
     /// without a self-borrow.
     distribute_scratch: Vec<MidiMessage>,
+    /// Events injected since the last block (hardware, already routed to
+    /// a source node by the midir callback; UI, fanned out by
+    /// [`Plan::inject_ui`]). Drained into source outboxes at the top of
+    /// `process`. Capacity-bounded; overflow drops the event.
+    pending: Vec<(NodeIndex, MidiMessage)>,
+    /// Set by [`Plan::request_panic`]; consumed at the top of the next
+    /// `process` call.
+    panic_requested: bool,
+    /// Per-node voice tracker — `Some` for instrument nodes (plugin /
+    /// testtone), `None` otherwise. Maintained during MIDI fan-out.
+    voices: Vec<Option<VoiceBits>>,
+    /// Device-agnostic event filters for every source node, used to fan
+    /// UI-originated events (on-screen keyboard) out to matching sources.
+    ui_filters: Vec<(NodeIndex, EventFilter)>,
 }
 
 impl Plan {
@@ -316,7 +564,6 @@ impl Plan {
         if let Err(cycle) = builder.topo_sort(&flat) {
             errors.push(cycle);
         }
-        builder.pick_hw_midi_target(&flat);
         builder.instantiate_nodes(&flat, &mut errors);
 
         if !errors.is_empty() && builder.has_fatal(&errors) {
@@ -360,15 +607,115 @@ impl Plan {
         c
     }
 
-    /// Inject one MIDI event into the hw-MIDI target node's outbox.
-    /// Called by the engine thread for hardware MIDI events (from midir)
-    /// and UI events (on-screen keyboard). No-op if the patch has no
-    /// `source.keyboard` node.
-    pub fn inject_midi(&mut self, msg: MidiMessage) {
-        if let Some(idx) = self.hw_midi_target {
-            // Use outbox: the source node has no transform to apply, so
-            // its outbox IS the post-process queue. Inbox stays empty.
-            self.midi_boxes[idx].outbox.push(msg);
+    /// Inject one MIDI event addressed to a specific source node. The
+    /// hardware path: the midir callback already matched the event
+    /// against the source's binding + filter, so this just queues it.
+    /// Bounded by the pending queue's capacity — overflow drops.
+    pub fn inject_to(&mut self, node: NodeIndex, msg: MidiMessage) {
+        if node < self.nodes.len() && self.pending.len() < self.pending.capacity() {
+            self.pending.push((node, msg));
+        }
+    }
+
+    /// Inject one UI-originated MIDI event (on-screen keyboard). Fans
+    /// out to every source node whose event filter accepts it — device
+    /// bindings are ignored, since the on-screen keyboard is a stand-in
+    /// for whatever hardware the source represents.
+    pub fn inject_ui(&mut self, msg: MidiMessage) {
+        for k in 0..self.ui_filters.len() {
+            let (node, ref filter) = self.ui_filters[k];
+            if filter.accepts(msg) {
+                if self.pending.len() >= self.pending.capacity() {
+                    return;
+                }
+                self.pending.push((node, msg));
+            }
+        }
+    }
+
+    /// Request a panic: the next `process` call flushes every tracked
+    /// voice with explicit note-offs and resets every continuous
+    /// controller the engine touches, on all 16 channels, before any
+    /// other event dispatch. Events queued before the panic are dropped.
+    /// Safe to call repeatedly — a panic with nothing tracked only
+    /// re-sends the controller resets.
+    pub fn request_panic(&mut self) {
+        self.pending.clear();
+        self.panic_requested = true;
+    }
+
+    /// Total notes currently held across every instrument node, per the
+    /// voice tracker. Diagnostic / test surface — not used per block.
+    #[allow(dead_code)]
+    pub fn active_voice_count(&self) -> usize {
+        self.voices.iter().flatten().map(VoiceBits::count).sum()
+    }
+
+    /// Held-note count for one node (0 for non-instruments). Diagnostic /
+    /// test surface.
+    #[allow(dead_code)]
+    pub fn active_voices_for(&self, node: NodeIndex) -> usize {
+        self.voices
+            .get(node)
+            .and_then(Option::as_ref)
+            .map_or(0, VoiceBits::count)
+    }
+
+    /// Write panic traffic straight into every instrument node's inbox:
+    /// sustain-off first (so the following note-offs actually release),
+    /// then a note-off + poly-aftertouch-clear per tracked voice, then
+    /// all-notes-off and the remaining controller resets on every
+    /// channel. Allocation-free: inboxes are pre-sized to EVENT_QUEUE
+    /// and the panic burst is 16×5 controller events + 2 per held note.
+    fn dispatch_panic(&mut self) {
+        for (idx, slot) in self.voices.iter_mut().enumerate() {
+            let Some(bits) = slot else { continue };
+            let inbox = &mut self.midi_boxes[idx].inbox;
+            for ch in 0..MIDI_CHANNELS as u8 {
+                inbox.push(MidiMessage::ControlChange {
+                    channel: ch,
+                    cc: 64,
+                    value: 0,
+                });
+            }
+            for ch in 0..MIDI_CHANNELS {
+                let mut held = bits.0[ch];
+                while held != 0 {
+                    let note = held.trailing_zeros() as u8;
+                    held &= held - 1;
+                    inbox.push(MidiMessage::NoteOff {
+                        channel: ch as u8,
+                        note,
+                        velocity: 0,
+                    });
+                    inbox.push(MidiMessage::PolyAftertouch {
+                        channel: ch as u8,
+                        note,
+                        value: 0,
+                    });
+                }
+            }
+            for ch in 0..MIDI_CHANNELS as u8 {
+                inbox.push(MidiMessage::ControlChange {
+                    channel: ch,
+                    cc: 123,
+                    value: 0,
+                });
+                inbox.push(MidiMessage::PitchBend {
+                    channel: ch,
+                    value: 0,
+                });
+                inbox.push(MidiMessage::ControlChange {
+                    channel: ch,
+                    cc: 1,
+                    value: 0,
+                });
+                inbox.push(MidiMessage::ChannelPressure {
+                    channel: ch,
+                    value: 0,
+                });
+            }
+            bits.clear();
         }
     }
 
@@ -382,19 +729,15 @@ impl Plan {
         let frames = (cpal_buf.len() / channels).min(MAX_FRAMES as usize);
 
         // -------------------------------------------------------------
-        // 1. Per-block reset.
-        //
-        // Clear every node's inbox/outbox EXCEPT the hw_midi_target's
-        // outbox — that's been populated by `inject_midi` calls since
-        // the previous block and we don't want to lose those events.
-        // Source nodes other than the target have empty outboxes by
-        // construction (no hardware routes to them in v0.8b).
+        // 1. Per-block reset. Every box clears — injected events live in
+        //    `pending` until step 1c, so nothing is lost. (v0.8b kept the
+        //    hw-target outbox across blocks instead, which re-distributed
+        //    every event on every subsequent block — latent bug fixed as
+        //    part of the #2 routing rework.)
         // -------------------------------------------------------------
-        for (i, mb) in self.midi_boxes.iter_mut().enumerate() {
+        for mb in self.midi_boxes.iter_mut() {
             mb.inbox.clear();
-            if Some(i) != self.hw_midi_target {
-                mb.outbox.clear();
-            }
+            mb.outbox.clear();
         }
 
         // Zero every edge so unconnected inputs read silence and
@@ -402,6 +745,27 @@ impl Plan {
         for edge in &mut self.edges {
             edge.fill_silence(frames);
         }
+
+        // -------------------------------------------------------------
+        // 1b. Panic, if requested: flush tracked voices + reset every
+        //     controller, straight into instrument inboxes so it lands
+        //     within this block regardless of graph topology.
+        // -------------------------------------------------------------
+        if self.panic_requested {
+            self.panic_requested = false;
+            self.dispatch_panic();
+        }
+
+        // -------------------------------------------------------------
+        // 1c. Deliver injected events into their source node's outbox —
+        //     the source has no transform to apply, so its outbox IS the
+        //     post-process queue that step 2 fans out to consumers.
+        // -------------------------------------------------------------
+        for k in 0..self.pending.len() {
+            let (node, msg) = self.pending[k];
+            self.midi_boxes[node].outbox.push(msg);
+        }
+        self.pending.clear();
 
         // -------------------------------------------------------------
         // 2. Iterate nodes in topo order.
@@ -477,9 +841,13 @@ impl Plan {
                     .extend_from_slice(&self.midi_boxes[idx].outbox);
                 for route in &routes.midi_routes {
                     let target = route.target;
+                    let tracker = &mut self.voices[target];
                     let inbox = &mut self.midi_boxes[target].inbox;
                     for &msg in &self.distribute_scratch {
                         if route.zone.is_none_or(|z| zone_passes(z, msg)) {
+                            if let Some(bits) = tracker {
+                                bits.observe(msg);
+                            }
                             inbox.push(msg);
                         }
                     }
@@ -611,8 +979,9 @@ struct PlanBuilder {
     /// Map: (node_idx, port_id) -> edge_id.
     output_port_edge: HashMap<(NodeIndex, String), EdgeId>,
     topo: Vec<NodeIndex>,
-    hw_midi_target: Option<NodeIndex>,
     sinks: Vec<NodeIndex>,
+    voices: Vec<Option<VoiceBits>>,
+    ui_filters: Vec<(NodeIndex, EventFilter)>,
 }
 
 impl PlanBuilder {
@@ -625,8 +994,9 @@ impl PlanBuilder {
             edges: Vec::new(),
             output_port_edge: HashMap::new(),
             topo: Vec::with_capacity(n),
-            hw_midi_target: None,
             sinks: Vec::new(),
+            voices: Vec::with_capacity(n),
+            ui_filters: Vec::new(),
         }
     }
 
@@ -795,15 +1165,6 @@ impl PlanBuilder {
         Ok(())
     }
 
-    fn pick_hw_midi_target(&mut self, graph: &FlatGraph) {
-        for (i, n) in graph.nodes.iter().enumerate() {
-            if n.kind == NodeKind::SourceKeyboard {
-                self.hw_midi_target = Some(i);
-                return;
-            }
-        }
-    }
-
     fn instantiate_nodes(&mut self, graph: &FlatGraph, errors: &mut Vec<PlanBuildError>) {
         // CLAP scan is potentially expensive; do it once and reuse for
         // every plugin node that needs to confirm a bundle path.
@@ -856,22 +1217,19 @@ impl PlanBuilder {
                     }
                 }
                 NodeKind::InstrumentTestTone => {
-                    let (out_l, out_r) = match resolve_stereo_outputs(n, i, &self.output_port_edge)
-                    {
-                        Some(pair) => pair,
-                        None => {
-                            // No stereo output ports — treat as Silent.
-                            self.nodes.push(PlannedNode::Silent);
-                            continue;
+                    match resolve_stereo_outputs(n, i, &self.output_port_edge) {
+                        // No stereo output ports — treat as Silent.
+                        None => PlannedNode::Silent,
+                        Some((out_l, out_r)) => {
+                            let polyphony = extract_polyphony(&n.config).unwrap_or(8);
+                            PlannedNode::TestTone(TestToneRuntime {
+                                synth: Synth::new(SAMPLE_RATE, polyphony.max(1)),
+                                out_l_edge: out_l,
+                                out_r_edge: out_r,
+                                scratch: vec![0.0; (MAX_FRAMES * 2) as usize],
+                            })
                         }
-                    };
-                    let polyphony = extract_polyphony(&n.config).unwrap_or(8);
-                    PlannedNode::TestTone(TestToneRuntime {
-                        synth: Synth::new(SAMPLE_RATE, polyphony.max(1)),
-                        out_l_edge: out_l,
-                        out_r_edge: out_r,
-                        scratch: vec![0.0; (MAX_FRAMES * 2) as usize],
-                    })
+                    }
                 }
                 NodeKind::AudioEq => {
                     let gains = match extract_eq_gains(&n.config) {
@@ -918,8 +1276,19 @@ impl PlanBuilder {
                     })
                 }
             };
+            self.voices.push(match &planned {
+                PlannedNode::Plugin(_) | PlannedNode::TestTone(_) => Some(VoiceBits::new()),
+                _ => None,
+            });
             self.nodes.push(planned);
         }
+
+        // UI-event fan-out targets: every source node's device-agnostic
+        // event filter (the on-screen keyboard ignores device bindings).
+        self.ui_filters = source_filters_for_nodes(&graph.nodes)
+            .into_iter()
+            .map(|s| (s.node, s.filter))
+            .collect();
     }
 
     fn has_fatal(&self, errors: &[PlanBuildError]) -> bool {
@@ -941,9 +1310,12 @@ impl PlanBuilder {
             midi_boxes: (0..n).map(|_| MidiBox::new()).collect(),
             edges: self.edges,
             topo: self.topo,
-            hw_midi_target: self.hw_midi_target,
             sinks: self.sinks,
             distribute_scratch: Vec::with_capacity(EVENT_QUEUE),
+            pending: Vec::with_capacity(EVENT_QUEUE),
+            panic_requested: false,
+            voices: self.voices,
+            ui_filters: self.ui_filters,
         }
     }
 }
@@ -1574,10 +1946,9 @@ pub fn render_self_test(graph: &PatchGraph) -> Result<SelfTestResult, String> {
     let mut plan = output.plan;
 
     // High note (C6 ≈ 1046.5 Hz — the closest semitone to 1 kHz on a
-    // 12-TET sine voice) at full velocity. The hw_midi_target's outbox
-    // is preserved across blocks, so a single inject keeps the note
-    // re-distributing for the duration of the render.
-    plan.inject_midi(MidiMessage::NoteOn {
+    // 12-TET sine voice) at full velocity. One note-on suffices: the
+    // testtone synth holds the voice until a note-off arrives.
+    plan.inject_ui(MidiMessage::NoteOn {
         channel: 0,
         note: 84,
         velocity: 127,
@@ -1998,10 +2369,55 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn hw_midi_targets_first_keyboard() {
-        let kb1 = node("kb1", NodeKind::SourceKeyboard, vec![midi_out("out")]);
-        let kb2 = node("kb2", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+    // -------------------------------------------------------------
+    // Hardware binding + per-source routing (#2)
+    // -------------------------------------------------------------
+
+    fn binding_config(json: serde_json::Value) -> Option<serde_json::Value> {
+        Some(serde_json::json!({ "hardwareBinding": json }))
+    }
+
+    /// kbd → testtone → sink twice over, with each keyboard bound to a
+    /// different device id. Injection isolation is asserted via the
+    /// per-instrument voice tracker.
+    fn two_keyboard_graph() -> PatchGraph {
+        fn stereo(id: &str, dir: PortDirection, ch: StereoChannel) -> Port {
+            Port {
+                id: PortId::new(id),
+                label: id.to_string(),
+                signal: SignalKind::Audio,
+                direction: dir,
+                config: Some(PortConfig::Stereo { channel: ch }),
+            }
+        }
+        let mut kb1 = node("kb1", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+        kb1.config = binding_config(serde_json::json!({
+            "deviceId": "dev-a",
+            "deviceName": "Keyboard A"
+        }));
+        let mut kb2 = node("kb2", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+        kb2.config = binding_config(serde_json::json!({
+            "deviceId": "dev-b",
+            "deviceName": "Keyboard B"
+        }));
+        let tt1 = node(
+            "tt1",
+            NodeKind::InstrumentTestTone,
+            vec![
+                midi_in("midi-in"),
+                stereo("out-l", PortDirection::Out, StereoChannel::L),
+                stereo("out-r", PortDirection::Out, StereoChannel::R),
+            ],
+        );
+        let tt2 = node(
+            "tt2",
+            NodeKind::InstrumentTestTone,
+            vec![
+                midi_in("midi-in"),
+                stereo("out-l", PortDirection::Out, StereoChannel::L),
+                stereo("out-r", PortDirection::Out, StereoChannel::R),
+            ],
+        );
         let sink = node(
             "sink",
             NodeKind::SinkMainOut,
@@ -2010,13 +2426,270 @@ mod tests {
                 audio_in("in-r", StereoChannel::R),
             ],
         );
+        PatchGraph {
+            nodes: vec![kb1, kb2, tt1, tt2, sink],
+            wires: vec![
+                wire("w1", "kb1", "out", "tt1", "midi-in"),
+                wire("w2", "kb2", "out", "tt2", "midi-in"),
+                wire("w3", "tt1", "out-l", "sink", "in-l"),
+                wire("w4", "tt1", "out-r", "sink", "in-r"),
+            ],
+            composites: vec![],
+        }
+    }
+
+    fn run_block(plan: &mut Plan) {
+        let spec = AudioSpec {
+            channels: 2,
+            sample_rate: SAMPLE_RATE as u32,
+        };
+        let mut buf = vec![0.0f32; 512 * 2];
+        plan.process(&mut buf, &spec);
+    }
+
+    fn note_on(channel: u8, note: u8) -> MidiMessage {
+        MidiMessage::NoteOn {
+            channel,
+            note,
+            velocity: 100,
+        }
+    }
+
+    #[test]
+    fn bound_keyboards_receive_only_their_devices_events() {
+        let graph = two_keyboard_graph();
+        let specs = source_event_filters(&graph);
+        assert_eq!(specs.len(), 2);
+        assert!(specs[0].matches_device("dev-a", "Keyboard A", true));
+        assert!(!specs[0].matches_device("dev-b", "Keyboard B", true));
+        // Identity wins over name when the bound id is present elsewhere.
+        assert!(!specs[0].matches_device("dev-x", "Keyboard A", true));
+        // Name fallback applies when the bound id vanished (replug).
+        assert!(specs[0].matches_device("dev-x", "Keyboard A", false));
+
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        // Simulate the midir-side routing outcome: device A's event goes
+        // to kb1 (node 0) only.
+        plan.inject_to(0, note_on(0, 60));
+        run_block(&mut plan);
+        assert_eq!(plan.active_voices_for(2), 1, "tt1 got kb1's note");
+        assert_eq!(plan.active_voices_for(3), 0, "tt2 must not see it");
+    }
+
+    #[test]
+    fn unbound_source_matches_any_device() {
+        let kb = node("kb", NodeKind::SourceKeyboard, vec![midi_out("out")]);
         let graph = PatchGraph {
-            nodes: vec![kb1, kb2, sink],
+            nodes: vec![kb],
             wires: vec![],
             composites: vec![],
         };
-        let out = Plan::build(&graph).expect("plan should build");
-        assert_eq!(out.plan.hw_midi_target, Some(0));
+        let specs = source_event_filters(&graph);
+        assert_eq!(specs.len(), 1);
+        assert!(specs[0].matches_device("anything", "Whatever", true));
+        assert!(specs[0].filter.accepts(note_on(5, 60)));
+    }
+
+    #[test]
+    fn kind_filters_narrow_event_classes() {
+        let sustain = EventFilter {
+            kind: NodeKind::SourceSustainPedal,
+            channel: None,
+            note_range: None,
+            cc_range: None,
+        };
+        let cc64 = MidiMessage::ControlChange {
+            channel: 0,
+            cc: 64,
+            value: 127,
+        };
+        let cc11 = MidiMessage::ControlChange {
+            channel: 0,
+            cc: 11,
+            value: 90,
+        };
+        assert!(sustain.accepts(cc64));
+        assert!(!sustain.accepts(cc11));
+        assert!(!sustain.accepts(note_on(0, 60)));
+
+        let wheel = EventFilter {
+            kind: NodeKind::SourcePitchWheel,
+            channel: None,
+            note_range: None,
+            cc_range: None,
+        };
+        assert!(wheel.accepts(MidiMessage::PitchBend {
+            channel: 3,
+            value: 1200
+        }));
+        assert!(!wheel.accepts(cc64));
+
+        let pads = EventFilter {
+            kind: NodeKind::SourcePads,
+            channel: Some(9),
+            note_range: None,
+            cc_range: None,
+        };
+        assert!(pads.accepts(note_on(9, 40)));
+        assert!(!pads.accepts(note_on(0, 40)), "wrong channel filtered");
+        assert!(!pads.accepts(cc64), "pads don't take CCs");
+    }
+
+    #[test]
+    fn binding_config_parses_ranges_and_channel() {
+        let mut kb = node("kb", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+        kb.config = binding_config(serde_json::json!({
+            "deviceId": null,
+            "channel": 3,
+            "noteRange": [21, 108],
+            "ccRange": [0, 63]
+        }));
+        let graph = PatchGraph {
+            nodes: vec![kb],
+            wires: vec![],
+            composites: vec![],
+        };
+        let spec = &source_event_filters(&graph)[0];
+        assert_eq!(spec.device_id, None);
+        assert!(
+            spec.filter.accepts(note_on(2, 60)),
+            "channel 3 is 0-based 2"
+        );
+        assert!(!spec.filter.accepts(note_on(3, 60)));
+        assert!(!spec.filter.accepts(note_on(2, 10)), "below note range");
+        assert!(!spec.filter.accepts(MidiMessage::ControlChange {
+            channel: 2,
+            cc: 64,
+            value: 1
+        }));
+        assert!(spec.filter.accepts(MidiMessage::ControlChange {
+            channel: 2,
+            cc: 1,
+            value: 1
+        }));
+    }
+
+    #[test]
+    fn overlapping_bindings_fan_out_to_all_matching_sources() {
+        // Two unbound keyboards feeding separate instruments: a UI event
+        // must reach both (fan-out, not first-match).
+        let mut graph = two_keyboard_graph();
+        graph.nodes[0].config = None;
+        graph.nodes[1].config = None;
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        plan.inject_ui(note_on(0, 64));
+        run_block(&mut plan);
+        assert_eq!(plan.active_voices_for(2), 1);
+        assert_eq!(plan.active_voices_for(3), 1);
+    }
+
+    #[test]
+    fn injected_events_deliver_exactly_once() {
+        // Regression for the v0.8b latent bug: the hw target's outbox was
+        // never cleared, so every injected event re-distributed on every
+        // subsequent block.
+        let graph = self_test_graph();
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        plan.inject_ui(note_on(0, 60));
+        run_block(&mut plan);
+        assert_eq!(plan.active_voice_count(), 1);
+        // The note-off must win on a later block — under the old
+        // accumulate-forever behavior the stale note-on would re-arrive
+        // alongside it and the voice would stick.
+        run_block(&mut plan);
+        plan.inject_ui(MidiMessage::NoteOff {
+            channel: 0,
+            note: 60,
+            velocity: 0,
+        });
+        run_block(&mut plan);
+        assert_eq!(plan.active_voice_count(), 0);
+    }
+
+    // -------------------------------------------------------------
+    // Panic (#3)
+    // -------------------------------------------------------------
+
+    #[test]
+    fn panic_flushes_held_chord_within_one_block() {
+        let graph = self_test_graph();
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        // 4-note chord with the sustain pedal down (per the #3 AC).
+        for note in [60, 64, 67, 71] {
+            plan.inject_ui(note_on(0, note));
+        }
+        plan.inject_ui(MidiMessage::ControlChange {
+            channel: 0,
+            cc: 64,
+            value: 127,
+        });
+        run_block(&mut plan);
+        assert_eq!(plan.active_voice_count(), 4);
+
+        plan.request_panic();
+        run_block(&mut plan);
+        assert_eq!(
+            plan.active_voice_count(),
+            0,
+            "panic must flush in one block"
+        );
+    }
+
+    #[test]
+    fn panic_is_idempotent_and_spammable() {
+        let graph = self_test_graph();
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        for note in [60, 64, 67, 71] {
+            plan.inject_ui(note_on(0, note));
+        }
+        run_block(&mut plan);
+        // 10 requests between blocks coalesce into one panic dispatch.
+        for _ in 0..10 {
+            plan.request_panic();
+        }
+        run_block(&mut plan);
+        assert_eq!(plan.active_voice_count(), 0);
+        // Panicking again with nothing held must not blow up (and must
+        // not have anything to flush).
+        plan.request_panic();
+        run_block(&mut plan);
+        assert_eq!(plan.active_voice_count(), 0);
+    }
+
+    #[test]
+    fn panic_drops_events_queued_before_it() {
+        let graph = self_test_graph();
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        plan.inject_ui(note_on(0, 60));
+        plan.request_panic();
+        run_block(&mut plan);
+        assert_eq!(
+            plan.active_voice_count(),
+            0,
+            "note-on queued before the panic must not fire after it"
+        );
+    }
+
+    // -------------------------------------------------------------
+    // Rebind (#1) — held voices survive because the plan survives; the
+    // tracker is the observable invariant the AC names.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn voice_tracker_state_survives_plan_handoff() {
+        let graph = self_test_graph();
+        let mut plan = Plan::build(&graph).expect("plan builds").plan;
+        for note in [60, 64, 67, 71] {
+            plan.inject_ui(note_on(0, note));
+        }
+        run_block(&mut plan);
+        assert_eq!(plan.active_voice_count(), 4);
+
+        // Simulate what rebind does: the plan moves out of one stream's
+        // callback state and into another. Ownership move, no rebuild.
+        let mut moved = plan;
+        run_block(&mut moved);
+        assert_eq!(moved.active_voice_count(), 4, "same 4 voices, no orphans");
     }
 
     /// Smoke test against the shape of `transposedSplitPatchGraph` in
@@ -2136,8 +2809,12 @@ mod tests {
         assert_eq!(counts.midi_transpose, 1);
         assert_eq!(counts.audio_mix, 1);
 
-        // Hardware MIDI routes to the keyboard.
-        assert_eq!(out.plan.hw_midi_target, Some(0));
+        // The keyboard is the only hardware-bindable source, matching
+        // any device (no explicit binding).
+        let specs = source_event_filters(&graph);
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].node, 0);
+        assert_eq!(specs[0].device_id, None);
 
         // Both keyboard zone wires must produce MIDI routes with zone
         // filters distinct from each other.

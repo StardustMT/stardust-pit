@@ -9,8 +9,10 @@
 //! on the `engine://status` event.
 
 mod commands;
-mod engine;
-mod engine_graph;
+// Public for the device-level integration tests in `tests/` (they need
+// a real audio device, so they're `#[ignore]`d in CI and run locally).
+pub mod engine;
+pub mod engine_graph;
 
 use tauri::Manager;
 
@@ -24,6 +26,8 @@ pub fn run() {
             commands::list_midi_inputs,
             commands::list_audio_outputs,
             commands::engine_start_from_patch,
+            commands::engine_rebind_routing,
+            commands::engine_panic,
             commands::engine_send_midi,
             commands::engine_stop,
             commands::engine_status,
