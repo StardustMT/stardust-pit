@@ -26,7 +26,9 @@ use stardust_core::show::{Patch, ShowDocument, ShowValidationError};
 use tauri::State;
 use tokio::sync::Mutex;
 
-use crate::engine::{EngineCommand, EngineHandle, EngineStatus, StartConfig};
+use crate::engine::{
+    EngineCommand, EngineHandle, EngineStatus, RebindError, RebindSpec, StartConfig,
+};
 
 // =============================================================================
 // Discovery serialization
@@ -138,11 +140,14 @@ pub async fn list_clap_plugins(lock: State<'_, DiscoveryLock>) -> Result<ClapSca
 // MIDI input devices
 // =============================================================================
 
-/// A MIDI input port the OS reported.
+/// A MIDI input port the OS reported. `id` is midir's opaque platform
+/// port identifier — the persistence key for per-source hardware
+/// bindings (#2); `name` is the display + open key.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MidiInputInfo {
     pub name: String,
+    pub id: String,
 }
 
 #[tauri::command]
@@ -155,7 +160,10 @@ pub async fn list_midi_inputs(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .map(|i| MidiInputInfo { name: i.name })
+                    .map(|i| MidiInputInfo {
+                        name: i.name,
+                        id: i.id,
+                    })
                     .collect()
             })
             .map_err(|e| e.to_string())
@@ -226,23 +234,53 @@ pub enum EngineStartError {
     Engine { message: String },
 }
 
-/// Start the engine from the active patch. `midi_input = None` runs
+/// Start the engine from the active patch. An empty `midi_inputs` runs
 /// with no hardware MIDI input — the engine still hosts and audibly
 /// plays whatever the on-screen keyboard injects via `engine_send_midi`.
 #[tauri::command]
 pub fn engine_start_from_patch(
     patch: Patch,
-    midi_input: Option<String>,
+    midi_inputs: Vec<String>,
     audio_output: Option<String>,
     engine: State<'_, EngineHandle>,
 ) -> Result<(), EngineStartError> {
     engine
         .send(EngineCommand::Start(StartConfig {
             graph: patch.graph,
-            midi_input,
+            midi_inputs,
             audio_output,
         }))
         .map_err(|message| EngineStartError::Engine { message })
+}
+
+/// Swap the audio output device and/or the hardware MIDI input set in
+/// place — same plan, no plugin reloads, held voices intact (#1). Only
+/// device *identity* changes take this path; sample-rate or buffer-size
+/// changes rebuild the plan via `engine_start_from_patch`. On error the
+/// previously-active devices stay (or are restored) active and the UI
+/// surfaces the failure — never a silent fail, never silence.
+#[tauri::command]
+pub async fn engine_rebind_routing(
+    spec: RebindSpec,
+    engine: State<'_, EngineHandle>,
+) -> Result<(), RebindError> {
+    // The reply round-trip blocks on the engine thread swapping streams;
+    // keep that off the async runtime.
+    let handle = engine.inner().clone();
+    tokio::task::spawn_blocking(move || handle.rebind(spec))
+        .await
+        .map_err(|e| RebindError::Internal {
+            message: format!("rebind task panicked: {e}"),
+        })?
+}
+
+/// Emergency reset (#3): flush every held voice and reset every
+/// continuous controller on all 16 channels, within one audio block.
+/// Fire-and-forget and always safe to spam — a panic with nothing stuck
+/// only re-sends the controller resets. No-op when the engine is idle.
+#[tauri::command]
+pub fn engine_panic(engine: State<'_, EngineHandle>) -> Result<(), String> {
+    engine.send(EngineCommand::Panic)
 }
 
 /// Fire-and-forget: push one MIDI message from a UI source (the on-screen

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { PanicButton } from "@/components/perform/panic-button"
 import { getPluginChoice } from "@/components/patch-graph/_types"
 import { usePluginScan } from "@/lib/use-plugin-scan"
 import { useShowStore } from "@/state/show-store"
@@ -11,7 +12,11 @@ import {
   type MidiInputInfo,
   type NativeNodeCounts,
   type PatchWire,
+  type RebindError,
   asEngineStartError,
+  asRebindError,
+  enginePanic,
+  engineRebindRouting,
   engineStartFromPatch,
   engineStatus,
   engineStop,
@@ -46,6 +51,7 @@ function EnginePanelInner() {
   const [audioOutput, setAudioOutput] = useState<string>("__default__")
   const [status, setStatus] = useState<EngineStatus>({ kind: "idle" })
   const [syncError, setSyncError] = useState<EngineStartError | undefined>()
+  const [rebindError, setRebindError] = useState<RebindError | undefined>()
 
   const { refresh: refreshPluginScan } = usePluginScan()
 
@@ -110,8 +116,34 @@ function EnginePanelInner() {
     }
   }, [midiInputs, midiInput])
 
+  // Global panic shortcut: Shift+Escape from anywhere in the app.
+  // (Configurable binding lands with the button/switch rig work, #5.)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && e.shiftKey) {
+        e.preventDefault()
+        void enginePanic()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+
+  // Rebind failures are transient by design (the engine kept the old
+  // device) — surface them for a few seconds, then clear.
+  useEffect(() => {
+    if (!rebindError) return
+    const t = window.setTimeout(() => setRebindError(undefined), 6000)
+    return () => window.clearTimeout(t)
+  }, [rebindError])
+
   // Sync the engine to the desired state. Always-on: if the patch has
   // any hostable instrument the engine runs; otherwise we stop.
+  //
+  // Two paths (#1's decision tree): if only the device picks changed —
+  // same patch, same plan signature — the plan is still valid, so we
+  // rebind in place (no plugin reload, no audible teardown). A patch or
+  // instrument change rebuilds the plan via engine_start_from_patch.
   const lastSyncRef = useRef<{
     patchId: string | undefined
     signature: string | undefined
@@ -136,11 +168,18 @@ function EnginePanelInner() {
     ) {
       return
     }
+    const planUnchanged =
+      prev !== null &&
+      prev.patchId === want.patchId &&
+      prev.signature === want.signature &&
+      currentPatch !== undefined &&
+      planSignature !== undefined
     lastSyncRef.current = want
 
     let cancelled = false
     void (async () => {
       setSyncError(undefined)
+      setRebindError(undefined)
       if (!currentPatch || !planSignature) {
         try {
           await engineStop()
@@ -149,10 +188,24 @@ function EnginePanelInner() {
         }
         return
       }
+      if (planUnchanged) {
+        try {
+          await engineRebindRouting({
+            audio: { device: audioOutput === "__default__" ? null : audioOutput },
+            midiInputs: midiInput === "__none__" ? [] : [midiInput],
+          })
+          return
+        } catch (e) {
+          const err = asRebindError(e)
+          if (!cancelled) setRebindError(err)
+          if (err.kind !== "notRunning") return
+          // Engine had stopped underneath us — fall through to a start.
+        }
+      }
       try {
         await engineStartFromPatch({
           patch: currentPatch,
-          midiInput: midiInput === "__none__" ? null : midiInput,
+          midiInputs: midiInput === "__none__" ? [] : [midiInput],
           audioOutput: audioOutput === "__default__" ? null : audioOutput,
         })
       } catch (e) {
@@ -213,12 +266,48 @@ function EnginePanelInner() {
           Refresh
         </Button>
 
+        <PanicButton
+          size="default"
+          className="h-7 gap-1.5 rounded px-2.5 text-[11px] shadow-none"
+          title="Flush all held notes + reset controllers (Shift+Esc)"
+          onClick={() => void enginePanic()}
+        />
+
         <div className="ml-auto">
           <StatusLine status={status} syncError={syncError} />
         </div>
       </div>
+      {rebindError && (
+        <div
+          role="alert"
+          className="mt-1.5 rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive"
+        >
+          {describeRebindError(rebindError)}
+        </div>
+      )}
     </div>
   )
+}
+
+function describeRebindError(e: RebindError): string {
+  switch (e.kind) {
+    case "notRunning":
+      return "Device change ignored — engine is not running."
+    case "audioDeviceNotFound":
+      return `Audio device "${e.name}" not found — previous device is still active.`
+    case "audioOpenFailed":
+      return e.restored
+        ? `Could not open the new audio device (${e.message}) — previous device restored.`
+        : `Could not open the new audio device and restoring the old one failed (${e.message}).`
+    case "midiInputNotFound":
+      return `MIDI input "${e.name}" not found — previous inputs are still active.`
+    case "midiOpenFailed":
+      return `MIDI input "${e.name}" failed to open (${e.message}) — previous inputs are still active.`
+    case "tooManyMidiInputs":
+      return `Too many MIDI inputs (max ${e.max}).`
+    case "internal":
+      return `Device change failed: ${e.message}`
+  }
 }
 
 function PatchChip({

@@ -44,7 +44,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  type MidiDeviceOption,
+  SourceBindingInspector,
+} from "@/components/patch-graph/source-binding-inspector"
 import { usePluginScan } from "@/lib/use-plugin-scan"
+import { useMidiInputs } from "@/lib/use-midi-inputs"
 import { cn } from "@/lib/utils"
 
 /**
@@ -284,11 +289,20 @@ export function PatchEditor({
   // picker). Shared via zustand with the EnginePanel's scan.
   const { plugins: installedPlugins } = usePluginScan()
 
+  // Connected MIDI inputs — fed to the source-binding inspector (#2).
+  // Empty outside Tauri; Storybook stories mock their own lists.
+  const { inputs: midiInputList } = useMidiInputs()
+  const midiDevices: MidiDeviceOption[] = React.useMemo(
+    () => midiInputList.map((d) => ({ name: d.name, id: d.id, connected: true })),
+    [midiInputList],
+  )
+
   // Rig sources shown in the Library's Sources group. We always prepend
   // a synthetic "Built-in UI keyboard" entry so the user has at least
   // one keyboard source available before the Rig page exists. It maps
   // to `source.keyboard`, which is what hardware MIDI feeds into too —
-  // they coexist fine; the engine fans events to the first such node.
+  // they coexist fine; events fan out to every source whose binding
+  // matches (#2).
   const augmentedRigSources: RigSource[] = React.useMemo(() => {
     const builtin: RigSource = {
       kind: "source.keyboard",
@@ -1036,6 +1050,7 @@ export function PatchEditor({
           onSetZoneColor={setZoneColor}
           onSetZoneWireFollows={setZoneWireFollows}
           onSetNodeConfig={setNodeConfig}
+          midiDevices={midiDevices}
         />
       ),
     },
@@ -1255,6 +1270,7 @@ function SettingsTab({
   onSetZoneColor,
   onSetZoneWireFollows,
   onSetNodeConfig,
+  midiDevices,
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
@@ -1285,6 +1301,7 @@ function SettingsTab({
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
   onSetNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void
+  midiDevices: MidiDeviceOption[]
 }) {
   return (
     <div className="flex h-full flex-col gap-3">
@@ -1306,6 +1323,7 @@ function SettingsTab({
             onSetZoneColor={onSetZoneColor}
             onSetZoneWireFollows={onSetZoneWireFollows}
             onSetNodeConfig={onSetNodeConfig}
+            midiDevices={midiDevices}
           />
         ) : selectedComposite ? (
           <CompositeSettings
@@ -1490,6 +1508,7 @@ function NodeSettings({
   onSetZoneColor,
   onSetZoneWireFollows,
   onSetNodeConfig,
+  midiDevices,
 }: {
   node: GraphNode
   onDelete: () => void
@@ -1503,6 +1522,7 @@ function NodeSettings({
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
   onSetNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void
+  midiDevices: MidiDeviceOption[]
 }) {
   const isPlugin = node.kind === "instrument.plugin"
   return (
@@ -1562,6 +1582,7 @@ function NodeSettings({
         ) : (
           <KindConfig
             node={node}
+            midiDevices={midiDevices}
             onAddZone={() => onAddZone(node.id)}
             onRemoveZone={(portId) => onRemoveZone(node.id, portId)}
             onResizeZone={(portId, range) => onResizeZone(node.id, portId, range)}
@@ -1569,6 +1590,7 @@ function NodeSettings({
             onSetZoneWireFollows={(portId, follows) =>
               onSetZoneWireFollows(node.id, portId, follows)
             }
+            onSetNodeConfig={(patch) => onSetNodeConfig(node.id, patch)}
           />
         )}
       </div>
@@ -1710,24 +1732,38 @@ function PluginUIDock({
 
 function KindConfig({
   node,
+  midiDevices,
   onAddZone,
   onRemoveZone,
   onResizeZone,
   onSetZoneColor,
   onSetZoneWireFollows,
+  onSetNodeConfig,
 }: {
   node: GraphNode
+  midiDevices: MidiDeviceOption[]
   onAddZone: () => void
   onRemoveZone: (portId: string) => void
   onResizeZone: (portId: string, range: { fromNote: number; toNote: number }) => void
   onSetZoneColor: (portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (portId: string, follows: boolean) => void
+  onSetNodeConfig: (patch: Record<string, unknown>) => void
 }) {
+  const isSource = classOf(node.kind) === "source"
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {node.name}
       </div>
+      {isSource && (
+        <div className="rounded-md border bg-background p-3">
+          <SourceBindingInspector
+            node={node}
+            devices={midiDevices}
+            onChange={(binding) => onSetNodeConfig({ hardwareBinding: binding })}
+          />
+        </div>
+      )}
       {node.kind === "midi.transpose" && (
         <div className="rounded-md border bg-background">
           <SettingRow label="Semitones" value={`${(node.config?.semitones as number) ?? 0}`} />
@@ -1779,19 +1815,16 @@ function KindConfig({
           <SettingRow label="DC blocker" value="On" />
         </div>
       )}
-      {![
-        "midi.transpose",
-        "audio.eq",
-        "source.keyboard",
-        "instrument.testtone",
-        "sink.main-out",
-      ].includes(node.kind) && (
-        <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
-          <div className="max-w-md p-6 text-center">
-            Kind-specific controls for {node.kind} land here.
+      {!isSource &&
+        !["midi.transpose", "audio.eq", "instrument.testtone", "sink.main-out"].includes(
+          node.kind,
+        ) && (
+          <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
+            <div className="max-w-md p-6 text-center">
+              Kind-specific controls for {node.kind} land here.
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   )
 }

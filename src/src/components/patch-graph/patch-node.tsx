@@ -5,6 +5,7 @@ import { typeLabelFor } from "./_catalog"
 import {
   CLASS_COLORS,
   classOf,
+  getHardwareBinding,
   getPluginChoice,
   SIGNAL_DEFAULT_COLORS,
   type GraphNode,
@@ -100,6 +101,8 @@ export function PatchNode({
   const widgetBlockHeight = minBodyHeightForKind(node.kind)
   const bodyContentHeight = Math.max(portsBlockHeight, widgetBlockHeight)
   const isInstrument = cls === "instrument"
+  const binding = getHardwareBinding(node)
+  const deviceLabel = binding?.deviceId ? (binding.deviceName ?? binding.deviceId) : undefined
 
   // Variable width: scale to fit longest label among the type-label, the
   // user name, and the longest port-row left+right combo.
@@ -262,6 +265,13 @@ export function PatchNode({
           })}
         </div>
       </div>
+
+      {/* Live device label for bound sources (#2): "← Yamaha P-125". */}
+      {deviceLabel && (
+        <div className="truncate border-t border-border/60 px-2.5 py-1 text-[9px] italic text-muted-foreground">
+          ← {deviceLabel}
+        </div>
+      )}
 
       {/* Port circles — absolutely positioned ON the node border */}
       {inputs.map((port, i) => (
