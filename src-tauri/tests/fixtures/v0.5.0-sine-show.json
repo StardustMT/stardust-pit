@@ -1,0 +1,71 @@
+{
+  "kind": "stardust.show",
+  "schemaVersion": 1,
+  "stardustVersion": "0.5.0",
+  "show": {
+    "name": "Self-test legacy show",
+    "rig": {
+      "sources": [
+        { "kind": "source.keyboard", "label": "Test keyboard" }
+      ]
+    },
+    "songs": [
+      {
+        "id": "s1",
+        "number": 1,
+        "name": "Sine smoke test",
+        "patches": [
+          {
+            "id": "p1",
+            "number": 1,
+            "name": "Sine through main out",
+            "graph": {
+              "nodes": [
+                {
+                  "id": "kbd",
+                  "kind": "source.keyboard",
+                  "name": "Main keyboard",
+                  "x": 80,
+                  "y": 220,
+                  "ports": [
+                    { "id": "out", "label": "MIDI out", "signal": "midi", "direction": "out" }
+                  ]
+                },
+                {
+                  "id": "sine",
+                  "kind": "instrument.sine",
+                  "name": "Sine synth",
+                  "x": 420,
+                  "y": 220,
+                  "ports": [
+                    { "id": "midi-in", "label": "MIDI in", "signal": "midi", "direction": "in" },
+                    { "id": "audio-l", "label": "Audio L", "signal": "audio", "direction": "out", "config": { "kind": "stereo", "channel": "L" } },
+                    { "id": "audio-r", "label": "Audio R", "signal": "audio", "direction": "out", "config": { "kind": "stereo", "channel": "R" } }
+                  ],
+                  "config": { "polyphony": 8 }
+                },
+                {
+                  "id": "out",
+                  "kind": "sink.main-out",
+                  "name": "Main out",
+                  "x": 760,
+                  "y": 220,
+                  "ports": [
+                    { "id": "in-l", "label": "In L", "signal": "audio", "direction": "in", "config": { "kind": "stereo", "channel": "L" } },
+                    { "id": "in-r", "label": "In R", "signal": "audio", "direction": "in", "config": { "kind": "stereo", "channel": "R" } }
+                  ]
+                }
+              ],
+              "wires": [
+                { "id": "w1", "fromNode": "kbd", "fromPort": "out", "toNode": "sine", "toPort": "midi-in" },
+                { "id": "w2", "fromNode": "sine", "fromPort": "audio-l", "toNode": "out", "toPort": "in-l" },
+                { "id": "w3", "fromNode": "sine", "fromPort": "audio-r", "toNode": "out", "toPort": "in-r" }
+              ],
+              "composites": []
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -75,7 +75,10 @@ export type NodeKind =
   | "midi.mix"
   // instruments
   | "instrument.plugin"
-  | "instrument.sine" // built-in
+  // Diagnostic-only built-in tone generator. Not surfaced in the
+  // palette; the engine self-test (Settings) instantiates it on demand.
+  // Renamed from `instrument.sine` in schema v2.
+  | "instrument.testtone"
   // audio effects
   | "audio.eq"
   | "audio.mix"

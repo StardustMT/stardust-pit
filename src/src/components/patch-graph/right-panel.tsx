@@ -193,7 +193,7 @@ function LibraryContent({
       }
       return {
         cls,
-        items: NODE_CATALOG.filter((s) => s.class === cls).map((s) => ({
+        items: NODE_CATALOG.filter((s) => s.class === cls && !s.hidden).map((s) => ({
           key: `catalog-${s.kind}`,
           kind: s.kind,
           label: s.label,

@@ -507,7 +507,7 @@ function minBodyHeightForKind(kind: GraphNode["kind"]): number {
     case "source.pads":
       return 40
     case "instrument.plugin":
-    case "instrument.sine":
+    case "instrument.testtone":
       return 72
     case "audio.eq":
       return 64

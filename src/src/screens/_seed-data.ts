@@ -72,8 +72,8 @@ export const LSOH_SONGS: ShowOutlineSong[] = [
 export function casualPatchGraph(): PatchGraph {
   const keyboard = makeNode("source.keyboard", { x: 80, y: 220 })
   keyboard.name = "Main keyboard"
-  const sine = makeNode("instrument.sine", { x: 420, y: 220 })
-  sine.name = "Sine synth"
+  const sine = makeNode("instrument.testtone", { x: 420, y: 220 })
+  sine.name = "Test tone"
   const out = makeNode("sink.main-out", { x: 760, y: 220 })
   return {
     nodes: [keyboard, sine, out],

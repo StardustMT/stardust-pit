@@ -73,8 +73,8 @@ function EnginePanelInner() {
       if (n.kind === "instrument.plugin") {
         const c = getPluginChoice(n)
         parts.push(c ? `plug:${c.bundlePath}|${c.pluginId}` : `plug:unconfigured`)
-      } else if (n.kind === "instrument.sine") {
-        parts.push(`sine`)
+      } else if (n.kind === "instrument.testtone") {
+        parts.push(`testtone`)
       }
     }
     return parts.length === 0 ? undefined : parts.join(";")
@@ -296,7 +296,7 @@ function PluginList({ plugins }: { plugins: HostedPluginStatus[] | undefined }) 
 function NativeSummary({ counts }: { counts: NativeNodeCounts | undefined }) {
   if (!counts) return null
   const parts: string[] = []
-  if ((counts.sine ?? 0) > 0) parts.push(`${counts.sine} sine`)
+  if ((counts.testTone ?? 0) > 0) parts.push(`${counts.testTone} testtone`)
   if ((counts.eq ?? 0) > 0) parts.push(`${counts.eq} EQ`)
   if ((counts.audioMix ?? 0) > 0) parts.push(`${counts.audioMix} mix`)
   if ((counts.midiTranspose ?? 0) > 0) parts.push(`${counts.midiTranspose} transpose`)

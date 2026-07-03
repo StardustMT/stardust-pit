@@ -227,7 +227,7 @@ function iconFor(kind: NodeKind): React.ComponentType<{ className?: string }> {
     case "midi.mix":
       return Cable
     case "instrument.plugin":
-    case "instrument.sine":
+    case "instrument.testtone":
       return Waves
     case "audio.eq":
       return Settings2

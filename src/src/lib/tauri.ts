@@ -89,7 +89,7 @@ export interface HostedPluginStatus {
  * Surfaced in EnginePanel as a one-line summary.
  */
 export interface NativeNodeCounts {
-  sine: number
+  testTone: number
   eq: number
   audioMix: number
   midiTranspose: number
@@ -172,6 +172,24 @@ export function engineStatus(): Promise<EngineStatus> {
  */
 export function onEngineStatus(cb: (s: EngineStatus) => void): Promise<UnlistenFn> {
   return listen<EngineStatus>("engine://status", (e) => cb(e.payload))
+}
+
+/**
+ * Result of `engine_self_test` — the loudest 100ms-RMS in dBFS and a
+ * pass flag. The threshold is owned by the engine
+ * (`SELF_TEST_THRESHOLD_DBFS`, currently −24 dBFS).
+ */
+export interface SelfTestResult {
+  peakRmsDbfs: number
+  passed: boolean
+}
+
+/**
+ * Run the engine self-test: render two seconds of a high-pitched note
+ * through a synthetic testtone graph, return the peak RMS.
+ */
+export function engineSelfTest(): Promise<SelfTestResult> {
+  return invoke<SelfTestResult>("engine_self_test")
 }
 
 // =============================================================================

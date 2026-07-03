@@ -17,6 +17,13 @@ export interface NodeSpec {
   description: string
   defaultPorts: () => Port[]
   defaultConfig?: () => Record<string, unknown>
+  /**
+   * When true, the node is not shown in the user-facing palette but the
+   * spec is still available to `makeNode` and to render-paths that need
+   * to display migrated documents. Used by `instrument.testtone`, the
+   * engine self-test diagnostic.
+   */
+  hidden?: boolean
 }
 
 // =============================================================================
@@ -147,10 +154,15 @@ export const NODE_CATALOG: NodeSpec[] = [
     defaultConfig: () => ({}),
   },
   {
-    kind: "instrument.sine",
+    // Built-in test-tone generator. Hidden from the user palette — the
+    // only user-facing surface is Settings → "Run engine self-test".
+    // Kept in the catalog so `makeNode` and the canvas renderers still
+    // resolve its defaults when loading migrated v1 documents.
+    kind: "instrument.testtone",
     class: "instrument",
-    label: "Built-in sine",
-    description: "Polyphonic sine synth with ADSR. Useful for testing.",
+    label: "Test tone (diagnostic)",
+    description: "Polyphonic sine voice used by the engine self-test diagnostic.",
+    hidden: true,
     defaultPorts: () => [
       { id: "midi-in", label: "MIDI in", signal: "midi", direction: "in" },
       {

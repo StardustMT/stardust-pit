@@ -209,7 +209,7 @@ pub async fn list_audio_outputs(
 // Since v0.8b, Start takes the whole patch graph — the engine builds an
 // executable plan (per ADR-0006) that walks every node, hosts every
 // `instrument.plugin`, and runs the native DSP nodes (`audio.eq`,
-// `audio.mix`, `instrument.sine`, `midi.transpose`, `midi.mix`). Per-
+// `audio.mix`, `instrument.testtone`, `midi.transpose`, `midi.mix`). Per-
 // node failures (a plugin that won't load, a missing config) come back
 // asynchronously via `EngineStatus::Error` so the UI can show them as
 // a list.
@@ -298,6 +298,29 @@ pub fn engine_stop(engine: State<'_, EngineHandle>) -> Result<(), String> {
 #[tauri::command]
 pub fn engine_status(engine: State<'_, EngineHandle>) -> EngineStatus {
     engine.snapshot()
+}
+
+// =============================================================================
+// Engine self-test (Settings → "Run engine self-test")
+//
+// Renders a 2-second high-pitched note through a synthetic
+// source.keyboard → instrument.testtone → sink.main-out graph and reports
+// the peak 100ms-RMS in dBFS. Pass threshold lives next to the renderer in
+// `engine_graph::SELF_TEST_THRESHOLD_DBFS`.
+//
+// Runs entirely on the calling thread — no engine state is mutated, no
+// cpal device is opened. Safe to invoke while the live engine is running
+// because the diagnostic owns its own ephemeral Plan.
+// =============================================================================
+
+#[tauri::command]
+pub async fn engine_self_test() -> Result<crate::engine_graph::SelfTestResult, String> {
+    tokio::task::spawn_blocking(|| {
+        let graph = crate::engine_graph::self_test_graph();
+        crate::engine_graph::render_self_test(&graph)
+    })
+    .await
+    .map_err(|e| format!("self-test join error: {e}"))?
 }
 
 // =============================================================================
