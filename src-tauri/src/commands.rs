@@ -140,11 +140,14 @@ pub async fn list_clap_plugins(lock: State<'_, DiscoveryLock>) -> Result<ClapSca
 // MIDI input devices
 // =============================================================================
 
-/// A MIDI input port the OS reported.
+/// A MIDI input port the OS reported. `id` is midir's opaque platform
+/// port identifier — the persistence key for per-source hardware
+/// bindings (#2); `name` is the display + open key.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MidiInputInfo {
     pub name: String,
+    pub id: String,
 }
 
 #[tauri::command]
@@ -157,7 +160,10 @@ pub async fn list_midi_inputs(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .map(|i| MidiInputInfo { name: i.name })
+                    .map(|i| MidiInputInfo {
+                        name: i.name,
+                        id: i.id,
+                    })
                     .collect()
             })
             .map_err(|e| e.to_string())

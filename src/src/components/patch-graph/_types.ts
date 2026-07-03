@@ -219,6 +219,39 @@ export function getPluginChoice(node: GraphNode): PluginChoice | undefined {
 }
 
 // =============================================================================
+// source.* hardware binding config (stardust-pit#2)
+//
+// Same ADR-0004 free-form-config pattern as PluginChoice. The engine
+// resolves these when it opens MIDI devices: `deviceId` (midir's opaque
+// platform port id) is the persistence key, `deviceName` the display +
+// replug fallback; channel / ranges narrow which events reach the node.
+// =============================================================================
+
+export interface HardwareBinding {
+  /** Opaque midir port id. `null` = match any device (back-compat). */
+  deviceId: string | null
+  /** Display name; also the fallback match key when the id vanished. */
+  deviceName?: string
+  /** 1–16; omitted/null = any channel. */
+  channel?: number | null
+  /** Inclusive note bounds 0–127; omitted = no filter. */
+  noteRange?: [number, number] | null
+  /** Inclusive CC bounds 0–127; omitted = no filter. */
+  ccRange?: [number, number] | null
+}
+
+/**
+ * Read the hardware binding off a source node. Returns `undefined` for
+ * non-source kinds or when no binding has been set (= match any device).
+ */
+export function getHardwareBinding(node: GraphNode): HardwareBinding | undefined {
+  if (classOf(node.kind) !== "source") return undefined
+  const raw = node.config?.hardwareBinding
+  if (!raw || typeof raw !== "object") return undefined
+  return raw as HardwareBinding
+}
+
+// =============================================================================
 // Visual palette per class (shared between node header + wire defaults)
 // =============================================================================
 

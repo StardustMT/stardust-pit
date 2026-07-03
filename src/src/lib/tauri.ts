@@ -51,6 +51,11 @@ export function listClapPlugins(): Promise<ClapScanResult> {
 
 export interface MidiInputInfo {
   name: string
+  /**
+   * Opaque platform port id (midir) — the persistence key for per-source
+   * hardware bindings. More stable across replug than the display name.
+   */
+  id: string
 }
 
 export function listMidiInputs(): Promise<MidiInputInfo[]> {
@@ -107,8 +112,8 @@ export type EngineStatus =
       kind: "running"
       plugins: HostedPluginStatus[]
       nativeNodes: NativeNodeCounts
-      /** `null` when running with no hardware MIDI — UI source only. */
-      midiInput: string | null
+      /** Open hardware MIDI input names; empty = UI source only. */
+      midiInputs: string[]
       audioOutput: string
       sampleRate: number
       channels: number
@@ -132,10 +137,60 @@ export type EngineStartError = { kind: "engine"; message: string }
  */
 export function engineStartFromPatch(args: {
   patch: PatchWire
-  midiInput: string | null
+  midiInputs: string[]
   audioOutput: string | null
 }): Promise<void> {
   return invoke<void>("engine_start_from_patch", args)
+}
+
+/**
+ * What `engine_rebind_routing` should change. Omitted (`undefined`)
+ * fields are left untouched, so audio and MIDI rebind independently.
+ * `audio.device: null` = host default output.
+ */
+export interface RebindSpec {
+  audio?: { device: string | null }
+  midiInputs?: string[]
+}
+
+/**
+ * Mirror of `engine::RebindError`. On any error the previously-active
+ * devices stay (or are restored) active — except
+ * `audioOpenFailed { restored: false }`, where the engine has stopped
+ * and published an Error status.
+ */
+export type RebindError =
+  | { kind: "notRunning" }
+  | { kind: "audioDeviceNotFound"; name: string }
+  | { kind: "audioOpenFailed"; message: string; restored: boolean }
+  | { kind: "midiInputNotFound"; name: string }
+  | { kind: "midiOpenFailed"; name: string; message: string }
+  | { kind: "tooManyMidiInputs"; max: number }
+  | { kind: "internal"; message: string }
+
+/** `.catch(asRebindError)` to get a typed error instead of `unknown`. */
+export function asRebindError(e: unknown): RebindError {
+  if (e && typeof e === "object" && "kind" in e) return e as RebindError
+  return { kind: "internal", message: String(e) }
+}
+
+/**
+ * Swap the audio output and/or hardware MIDI input set in place — same
+ * plan, no plugin reloads, held voices intact. Device identity changes
+ * only; a sample-rate or buffer-size change goes through
+ * `engineStartFromPatch` (full plan rebuild) instead.
+ */
+export function engineRebindRouting(spec: RebindSpec): Promise<void> {
+  return invoke<void>("engine_rebind_routing", { spec })
+}
+
+/**
+ * Emergency reset: flush every held voice + reset all continuous
+ * controllers on all 16 channels within one audio block. Safe to spam;
+ * no-op when the engine is idle.
+ */
+export function enginePanic(): Promise<void> {
+  return invoke<void>("engine_panic")
 }
 
 /** `.catch(asEngineStartError)` to get a typed error instead of `unknown`. */
