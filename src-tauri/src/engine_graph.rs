@@ -183,8 +183,11 @@ struct PluginRuntime {
     vendor: String,
 }
 
-/// Built-in sine synth runtime (used when a node's kind is `instrument.sine`).
-struct SineRuntime {
+/// Built-in test-tone synth runtime (used when a node's kind is
+/// `instrument.testtone`). The DSP under the hood is the same polyphonic
+/// sine voice used for the engine self-test diagnostic; it is no longer
+/// surfaced in the user-facing patch palette.
+struct TestToneRuntime {
     synth: Synth,
     /// Edges this node writes its stereo output into.
     out_l_edge: EdgeId,
@@ -243,7 +246,7 @@ enum PlannedNode {
     /// every upstream wire; it copies inbox → outbox unchanged.
     MidiMix,
     Plugin(PluginRuntime),
-    Sine(SineRuntime),
+    TestTone(TestToneRuntime),
     Eq(EqRuntime),
     AudioMix(AudioMixRuntime),
     Sink(SinkRuntime),
@@ -264,11 +267,11 @@ pub struct HostedPluginStatus {
 
 /// Counts of native DSP nodes in a running plan — surfaced to the UI as
 /// a summary so the user can see at a glance "this patch has 2 plugins,
-/// 1 sine, 1 EQ, 2 audio mixers, 1 transpose, 0 midi mixers".
+/// 1 testtone, 1 EQ, 2 audio mixers, 1 transpose, 0 midi mixers".
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeNodeCounts {
-    pub sine: usize,
+    pub test_tone: usize,
     pub eq: usize,
     pub audio_mix: usize,
     pub midi_transpose: usize,
@@ -346,7 +349,7 @@ impl Plan {
         let mut c = NativeNodeCounts::default();
         for n in &self.nodes {
             match n {
-                PlannedNode::Sine(_) => c.sine += 1,
+                PlannedNode::TestTone(_) => c.test_tone += 1,
                 PlannedNode::Eq(_) => c.eq += 1,
                 PlannedNode::AudioMix(_) => c.audio_mix += 1,
                 PlannedNode::MidiTranspose { .. } => c.midi_transpose += 1,
@@ -443,8 +446,8 @@ impl Plan {
                 PlannedNode::Plugin(p) => {
                     process_plugin(p, &self.midi_boxes[idx], &mut self.edges, frames);
                 }
-                PlannedNode::Sine(s) => {
-                    process_sine(s, &self.midi_boxes[idx], &mut self.edges, frames);
+                PlannedNode::TestTone(s) => {
+                    process_test_tone(s, &self.midi_boxes[idx], &mut self.edges, frames);
                 }
                 PlannedNode::Eq(e) => {
                     process_eq(e, &mut self.edges, frames);
@@ -774,6 +777,20 @@ impl PlanBuilder {
             });
         }
 
+        // MIDI sources have no audio wires, so Kahn can land them anywhere.
+        // For correct per-block MIDI delivery we need every source.* to run
+        // before any node that might consume its MIDI in the same block —
+        // otherwise the distributed events end up in the target's inbox
+        // *after* the target has already processed, and get cleared on the
+        // next block's reset. Stable-partition keeps the audio DAG order
+        // intact and just lifts sources to the front.
+        order.sort_by_key(|&i| {
+            !matches!(
+                graph.nodes[i].kind.class(),
+                stardust_core::patch::NodeClass::Source
+            )
+        });
+
         self.topo = order;
         Ok(())
     }
@@ -838,7 +855,7 @@ impl PlanBuilder {
                         }
                     }
                 }
-                NodeKind::InstrumentSine => {
+                NodeKind::InstrumentTestTone => {
                     let (out_l, out_r) = match resolve_stereo_outputs(n, i, &self.output_port_edge)
                     {
                         Some(pair) => pair,
@@ -849,7 +866,7 @@ impl PlanBuilder {
                         }
                     };
                     let polyphony = extract_polyphony(&n.config).unwrap_or(8);
-                    PlannedNode::Sine(SineRuntime {
+                    PlannedNode::TestTone(TestToneRuntime {
                         synth: Synth::new(SAMPLE_RATE, polyphony.max(1)),
                         out_l_edge: out_l,
                         out_r_edge: out_r,
@@ -1260,7 +1277,12 @@ fn process_plugin(
     }
 }
 
-fn process_sine(s: &mut SineRuntime, midi_box: &MidiBox, edges: &mut [StereoEdge], frames: usize) {
+fn process_test_tone(
+    s: &mut TestToneRuntime,
+    midi_box: &MidiBox,
+    edges: &mut [StereoEdge],
+    frames: usize,
+) {
     for &msg in &midi_box.inbox {
         s.synth.process_midi(msg);
     }
@@ -1521,6 +1543,201 @@ fn try_instantiate_plugin(
 }
 
 // =============================================================================
+// Engine self-test diagnostic
+//
+// Builds a synthetic source.keyboard → instrument.testtone → sink.main-out
+// graph, plays a high-pitched note for 2 seconds offline, and reports the
+// peak RMS in dBFS over any 100ms window. Used by the Settings → "Run
+// engine self-test" button and by the v1 fixture-migration test.
+// =============================================================================
+
+/// Result of a self-test render: the loudest 100ms RMS encountered, and
+/// whether that exceeded the pass threshold.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfTestResult {
+    pub peak_rms_dbfs: f32,
+    pub passed: bool,
+}
+
+/// Diagnostic pass criterion: any 100ms RMS window must be louder than
+/// −24 dBFS. Picked so a working signal path passes comfortably while
+/// silence (or a stuck-Silent node) fails unambiguously.
+pub const SELF_TEST_THRESHOLD_DBFS: f32 = -24.0;
+
+/// Render two seconds of audio from the given graph and report the loudest
+/// 100ms-window RMS on the left channel. The graph is expected to contain
+/// one `source.keyboard` (the hw_midi_target), one instrument that responds
+/// to MIDI note-on, and one `sink.main-out`.
+pub fn render_self_test(graph: &PatchGraph) -> Result<SelfTestResult, String> {
+    let output = Plan::build(graph).map_err(|errs| format!("plan build failed: {errs:?}"))?;
+    let mut plan = output.plan;
+
+    // High note (C6 ≈ 1046.5 Hz — the closest semitone to 1 kHz on a
+    // 12-TET sine voice) at full velocity. The hw_midi_target's outbox
+    // is preserved across blocks, so a single inject keeps the note
+    // re-distributing for the duration of the render.
+    plan.inject_midi(MidiMessage::NoteOn {
+        channel: 0,
+        note: 84,
+        velocity: 127,
+    });
+
+    const BLOCK: usize = 512;
+    let channels: u16 = 2;
+    let total_frames = (SAMPLE_RATE as usize) * 2;
+    let spec = AudioSpec {
+        channels,
+        sample_rate: SAMPLE_RATE as u32,
+    };
+    let mut buf = vec![0.0f32; BLOCK * channels as usize];
+    let mut left = Vec::with_capacity(total_frames);
+    let mut rendered = 0;
+    while rendered < total_frames {
+        let take = BLOCK.min(total_frames - rendered);
+        let slice = &mut buf[..take * channels as usize];
+        for s in slice.iter_mut() {
+            *s = 0.0;
+        }
+        plan.process(slice, &spec);
+        for f in 0..take {
+            left.push(slice[f * channels as usize]);
+        }
+        rendered += take;
+    }
+
+    let window = (SAMPLE_RATE * 0.1) as usize;
+    let peak_rms = peak_rms_over_window(&left, window);
+    let peak_rms_dbfs = if peak_rms > 0.0 {
+        20.0 * peak_rms.log10()
+    } else {
+        f32::NEG_INFINITY
+    };
+    Ok(SelfTestResult {
+        peak_rms_dbfs,
+        passed: peak_rms_dbfs > SELF_TEST_THRESHOLD_DBFS,
+    })
+}
+
+/// Build the canonical self-test patch graph from scratch — keyboard →
+/// testtone → sink. Used by the Tauri `engine_self_test` command so the
+/// diagnostic never depends on the user's currently-loaded patch.
+pub fn self_test_graph() -> PatchGraph {
+    use stardust_core::patch::{
+        GraphNode, NodeId, PatchGraph, Port, PortConfig, PortDirection, SignalKind, StereoChannel,
+        Wire, WireId,
+    };
+
+    fn port(id: &str, label: &str, signal: SignalKind, dir: PortDirection) -> Port {
+        Port {
+            id: stardust_core::patch::PortId::new(id),
+            label: label.to_string(),
+            signal,
+            direction: dir,
+            config: None,
+        }
+    }
+    fn stereo(id: &str, label: &str, dir: PortDirection, ch: StereoChannel) -> Port {
+        Port {
+            id: stardust_core::patch::PortId::new(id),
+            label: label.to_string(),
+            signal: SignalKind::Audio,
+            direction: dir,
+            config: Some(PortConfig::Stereo { channel: ch }),
+        }
+    }
+
+    let kbd = GraphNode {
+        id: NodeId::new("kbd"),
+        kind: NodeKind::SourceKeyboard,
+        name: "kbd".into(),
+        x: 0.0,
+        y: 0.0,
+        ports: vec![port(
+            "out",
+            "MIDI out",
+            SignalKind::Midi,
+            PortDirection::Out,
+        )],
+        config: None,
+    };
+    let testtone = GraphNode {
+        id: NodeId::new("tt"),
+        kind: NodeKind::InstrumentTestTone,
+        name: "tt".into(),
+        x: 0.0,
+        y: 0.0,
+        ports: vec![
+            port("midi-in", "MIDI in", SignalKind::Midi, PortDirection::In),
+            stereo("audio-l", "L", PortDirection::Out, StereoChannel::L),
+            stereo("audio-r", "R", PortDirection::Out, StereoChannel::R),
+        ],
+        config: None,
+    };
+    let sink = GraphNode {
+        id: NodeId::new("sink"),
+        kind: NodeKind::SinkMainOut,
+        name: "sink".into(),
+        x: 0.0,
+        y: 0.0,
+        ports: vec![
+            stereo("in-l", "L", PortDirection::In, StereoChannel::L),
+            stereo("in-r", "R", PortDirection::In, StereoChannel::R),
+        ],
+        config: None,
+    };
+    PatchGraph {
+        nodes: vec![kbd, testtone, sink],
+        wires: vec![
+            Wire {
+                id: WireId::new("w1"),
+                from_node: NodeId::new("kbd"),
+                from_port: stardust_core::patch::PortId::new("out"),
+                to_node: NodeId::new("tt"),
+                to_port: stardust_core::patch::PortId::new("midi-in"),
+                color: None,
+            },
+            Wire {
+                id: WireId::new("w2"),
+                from_node: NodeId::new("tt"),
+                from_port: stardust_core::patch::PortId::new("audio-l"),
+                to_node: NodeId::new("sink"),
+                to_port: stardust_core::patch::PortId::new("in-l"),
+                color: None,
+            },
+            Wire {
+                id: WireId::new("w3"),
+                from_node: NodeId::new("tt"),
+                from_port: stardust_core::patch::PortId::new("audio-r"),
+                to_node: NodeId::new("sink"),
+                to_port: stardust_core::patch::PortId::new("in-r"),
+                color: None,
+            },
+        ],
+        composites: vec![],
+    }
+}
+
+fn peak_rms_over_window(samples: &[f32], window: usize) -> f32 {
+    if samples.len() < window || window == 0 {
+        return 0.0;
+    }
+    let mut sum_sq = 0.0f32;
+    for &s in &samples[..window] {
+        sum_sq += s * s;
+    }
+    let mut peak = (sum_sq / window as f32).sqrt();
+    for i in window..samples.len() {
+        sum_sq += samples[i] * samples[i] - samples[i - window] * samples[i - window];
+        let rms = (sum_sq.max(0.0) / window as f32).sqrt();
+        if rms > peak {
+            peak = rms;
+        }
+    }
+    peak
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -1600,10 +1817,10 @@ mod tests {
 
     #[test]
     fn topo_sort_orders_audio_dag() {
-        // sine -> eq -> sink
+        // testtone -> eq -> sink
         let sine = node(
             "sine",
-            NodeKind::InstrumentSine,
+            NodeKind::InstrumentTestTone,
             vec![
                 audio_out("audio-l", StereoChannel::L),
                 audio_out("audio-r", StereoChannel::R),
@@ -1943,5 +2160,35 @@ mod tests {
             MidiMessage::NoteOn { note, .. } => assert_eq!(note, 72),
             _ => panic!("expected NoteOn"),
         }
+    }
+
+    #[test]
+    fn synthetic_self_test_produces_audio() {
+        let graph = self_test_graph();
+        let result = render_self_test(&graph).expect("self-test should render");
+        assert!(
+            result.passed,
+            "expected RMS > {} dBFS, got {}",
+            SELF_TEST_THRESHOLD_DBFS, result.peak_rms_dbfs
+        );
+    }
+
+    /// Per #9 acceptance criteria: the canonical v0.5.0 sine fixture loads
+    /// through `ShowDocument::from_json` (which runs the v1→v2 migration),
+    /// builds an engine plan, and produces audio above the self-test
+    /// threshold.
+    #[test]
+    fn v0_5_0_sine_show_migrates_and_produces_audio() {
+        const RAW: &str = include_str!("../tests/fixtures/v0.5.0-sine-show.json");
+        let doc = stardust_core::show::ShowDocument::from_json(RAW)
+            .expect("v0.5.0 sine fixture parses + migrates");
+        assert_eq!(doc.header.schema_version, 2);
+        let patch = &doc.show.songs[0].patches[0];
+        let result = render_self_test(&patch.graph).expect("plan + render succeeds");
+        assert!(
+            result.passed,
+            "v0.5.0 fixture after migration produced only {} dBFS RMS",
+            result.peak_rms_dbfs
+        );
     }
 }

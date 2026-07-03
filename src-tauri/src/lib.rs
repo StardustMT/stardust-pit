@@ -27,6 +27,7 @@ pub fn run() {
             commands::engine_send_midi,
             commands::engine_stop,
             commands::engine_status,
+            commands::engine_self_test,
             commands::load_show,
             commands::save_show,
         ])

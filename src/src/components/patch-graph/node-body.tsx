@@ -45,7 +45,7 @@ export function NodeBody({ node }: { node: GraphNode }) {
       return <MixBody count={countInputs(node)} signal="midi" />
     case "instrument.plugin":
       return <PluginBody node={node} />
-    case "instrument.sine":
+    case "instrument.testtone":
       return <SineBody node={node} />
     case "audio.eq":
       return <EQBody node={node} />
@@ -310,7 +310,7 @@ export function pluginChipName(node: GraphNode): string | undefined {
   if (node.kind === "instrument.plugin") {
     return getPluginChoice(node)?.pluginName
   }
-  if (node.kind === "instrument.sine") return "built-in"
+  if (node.kind === "instrument.testtone") return "built-in"
   return undefined
 }
 

@@ -17,7 +17,6 @@ import {
   Undo2,
   Unlock,
   Volume2,
-  Waves,
 } from "lucide-react"
 import { AppShellFrame, InspectorFrame } from "@/components/shell/app-shell-frame"
 import type { AppMode } from "@/components/shell/nav-rail"
@@ -858,12 +857,6 @@ export function PatchEditor({
               label: "Add keyboard here",
               icon: Music,
               onSelect: () => addNodeAt("source.keyboard", canvasPos),
-            },
-            {
-              id: "add-sine",
-              label: "Add sine synth here",
-              icon: Waves,
-              onSelect: () => addNodeAt("instrument.sine", canvasPos),
             },
             {
               id: "add-eq",
@@ -1772,7 +1765,7 @@ function KindConfig({
           onSetZoneWireFollows={onSetZoneWireFollows}
         />
       )}
-      {node.kind === "instrument.sine" && (
+      {node.kind === "instrument.testtone" && (
         <div className="rounded-md border bg-background">
           <SettingRow label="Polyphony" value={`${(node.config?.polyphony as number) ?? 8}`} />
           <SettingRow label="Attack" value="5 ms" slider />
@@ -1790,7 +1783,7 @@ function KindConfig({
         "midi.transpose",
         "audio.eq",
         "source.keyboard",
-        "instrument.sine",
+        "instrument.testtone",
         "sink.main-out",
       ].includes(node.kind) && (
         <div className="grid h-full place-items-center rounded-md border bg-muted/20 text-[11px] text-muted-foreground">
