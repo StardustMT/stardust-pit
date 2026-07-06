@@ -1081,6 +1081,10 @@ export function PatchEditor({
   return (
     <>
       <AppShellFrame
+        // Fill the slot App.tsx gives us instead of the frame's default
+        // h-screen — the engine panel strip sits above us, and h-screen
+        // here pushed the status footer below the fold (#119).
+        className="h-full w-full"
         mode={mode}
         onModeChange={setMode}
         showName={showName}
