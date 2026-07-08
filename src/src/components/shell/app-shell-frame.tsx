@@ -28,6 +28,12 @@ export interface AppShellFrameProps {
   onGoLive?: () => void
   /** Right-side actions in the mode-switcher row (Open Show, Save Show, etc.). */
   headerActions?: React.ReactNode
+  /**
+   * Bottom status footer. The live app passes `<EngineStatusBar />`
+   * (real engine status, #121); when omitted (Storybook mocks) a
+   * placeholder StatusBar with demo data renders instead.
+   */
+  statusBar?: React.ReactNode
   className?: string
 }
 
@@ -41,6 +47,7 @@ export function AppShellFrame({
   inspector,
   onGoLive,
   headerActions,
+  statusBar,
   className,
 }: AppShellFrameProps) {
   const isPerform = mode === "perform"
@@ -142,16 +149,18 @@ export function AppShellFrame({
       </div>
 
       {/* Status bar — system info only. No show/song duplicate. */}
-      <StatusBar
-        audioDevice="Focusrite Scarlett 18i20"
-        sampleRate={48000}
-        bufferSize={128}
-        latencyMs={7.8}
-        midiPortCount={4}
-        cpu={0.42}
-        ramMb={5_400}
-        ramTotalMb={32_768}
-      />
+      {statusBar ?? (
+        <StatusBar
+          audioDevice="Focusrite Scarlett 18i20"
+          sampleRate={48000}
+          bufferSize={128}
+          latencyMs={7.8}
+          midiPortCount={4}
+          cpu={0.42}
+          ramMb={5_400}
+          ramTotalMb={32_768}
+        />
+      )}
     </div>
   )
 }

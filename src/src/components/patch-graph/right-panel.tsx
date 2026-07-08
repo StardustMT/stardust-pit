@@ -19,6 +19,12 @@ export interface RigSource {
   kind: NodeKind
   /** Friendly name as the user labelled it (e.g. "Nord Stage 3 keys"). */
   label: string
+  /**
+   * Rig-component id (#122). When set, dropping this card creates a
+   * source node already assigned to the component
+   * (`config.rigComponentId`). Absent for the built-in UI keyboard.
+   */
+  componentId?: string
 }
 
 /**
@@ -158,7 +164,10 @@ function LibraryContent({
               kind: src.kind,
               label: src.label,
               description: spec?.description ?? "",
-              overrides: { name: src.label },
+              overrides: {
+                name: src.label,
+                ...(src.componentId ? { config: { rigComponentId: src.componentId } } : {}),
+              },
             }
           }),
         }

@@ -43,7 +43,7 @@ function StoryFrame({
   selectedPatchId: string
   patchName: string
   songName: string
-  rigSources: typeof DEFAULT_RIG
+  rigComponents: typeof DEFAULT_RIG
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
 }) {
   const [graph, setGraph] = React.useState(initialGraph)
@@ -60,7 +60,7 @@ export const CasualPatch: Story = {
       selectedPatchId="p1.1"
       patchName="Cold open"
       songName="Prologue"
-      rigSources={DEFAULT_RIG}
+      rigComponents={DEFAULT_RIG}
     />
   ),
 }
@@ -75,7 +75,7 @@ export const SplitWithTranspose: Story = {
       selectedPatchId="p4.2"
       patchName="Growl bass + pads"
       songName="Feed Me (Git It)"
-      rigSources={DEFAULT_RIG}
+      rigComponents={DEFAULT_RIG}
     />
   ),
 }
@@ -90,7 +90,7 @@ export const PianoWithSends: Story = {
       selectedPatchId="p3.1"
       patchName="Solo piano"
       songName="Somewhere That's Green"
-      rigSources={DEFAULT_RIG}
+      rigComponents={DEFAULT_RIG}
     />
   ),
 }
@@ -105,7 +105,7 @@ export const WithCompositeBlock: Story = {
       selectedPatchId="p2.2"
       patchName="Chorus pads"
       songName="Skid Row (Downtown)"
-      rigSources={FULL_RIG}
+      rigComponents={FULL_RIG}
       savedComposites={[
         { id: "b3", name: "B3 + Leslie", nodeCount: 2 },
         { id: "rhodes", name: "Rhodes + chorus + tape", nodeCount: 3 },

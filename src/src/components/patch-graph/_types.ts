@@ -219,36 +219,25 @@ export function getPluginChoice(node: GraphNode): PluginChoice | undefined {
 }
 
 // =============================================================================
-// source.* hardware binding config (stardust-pit#2)
+// source.* rig-component reference (stardust-pit#122, schema v3)
 //
-// Same ADR-0004 free-form-config pattern as PluginChoice. The engine
-// resolves these when it opens MIDI devices: `deviceId` (midir's opaque
-// platform port id) is the persistence key, `deviceName` the display +
-// replug fallback; channel / ranges narrow which events reach the node.
+// Same ADR-0004 free-form-config pattern as PluginChoice. A source node's
+// `rigComponentId` names the rig component it *is* — the component owns
+// hardware identity (device, channel, learned ranges). A node without one
+// is unassigned: silent on the hardware path and flagged in the UI. The
+// v2-era node-level `hardwareBinding` no longer exists (migrated to rig
+// components by the show v2→v3 migration).
 // =============================================================================
 
-export interface HardwareBinding {
-  /** Opaque midir port id. `null` = match any device (back-compat). */
-  deviceId: string | null
-  /** Display name; also the fallback match key when the id vanished. */
-  deviceName?: string
-  /** 1–16; omitted/null = any channel. */
-  channel?: number | null
-  /** Inclusive note bounds 0–127; omitted = no filter. */
-  noteRange?: [number, number] | null
-  /** Inclusive CC bounds 0–127; omitted = no filter. */
-  ccRange?: [number, number] | null
-}
-
 /**
- * Read the hardware binding off a source node. Returns `undefined` for
- * non-source kinds or when no binding has been set (= match any device).
+ * Read the rig-component reference off a source node. Returns
+ * `undefined` for non-source kinds or unassigned nodes.
  */
-export function getHardwareBinding(node: GraphNode): HardwareBinding | undefined {
+export function getRigComponentId(node: GraphNode): string | undefined {
   if (classOf(node.kind) !== "source") return undefined
-  const raw = node.config?.hardwareBinding
-  if (!raw || typeof raw !== "object") return undefined
-  return raw as HardwareBinding
+  const raw = node.config?.rigComponentId
+  if (typeof raw !== "string" || raw === "") return undefined
+  return raw
 }
 
 // =============================================================================

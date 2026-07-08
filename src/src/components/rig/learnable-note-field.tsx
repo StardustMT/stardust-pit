@@ -22,6 +22,8 @@ export interface LearnableNoteFieldProps {
   /** Current MIDI note (0–127), or undefined if unset */
   value?: number
   onChange: (note: number | undefined) => void
+  /** Real capture (#122): awaits the next note-on Learn event. */
+  capture?: (signal: AbortSignal) => Promise<number | undefined>
   /** Storybook only: what to "capture" when the mock listen resolves */
   mockCapture?: () => number
   /** Storybook only: how long to pretend to listen */
@@ -33,6 +35,7 @@ export function LearnableNoteField({
   label,
   value,
   onChange,
+  capture,
   mockCapture,
   mockListenMs = 1400,
   className,
@@ -46,15 +49,36 @@ export function LearnableNoteField({
     setDraft(value !== undefined ? String(value) : "")
   }, [value])
 
+  // Refs keep an in-flight listen stable across parent re-renders —
+  // re-created closures must not abort + restart the Learn session.
+  const captureRef = React.useRef(capture)
+  const mockRef = React.useRef(mockCapture)
+  const onChangeRef = React.useRef(onChange)
+  React.useEffect(() => {
+    captureRef.current = capture
+    mockRef.current = mockCapture
+    onChangeRef.current = onChange
+  })
+
   React.useEffect(() => {
     if (!listening) return
+    const capture = captureRef.current
+    if (capture) {
+      const controller = new AbortController()
+      void capture(controller.signal).then((captured) => {
+        if (controller.signal.aborted) return
+        setListening(false)
+        if (captured !== undefined) onChangeRef.current(clampNote(captured))
+      })
+      return () => controller.abort()
+    }
     const t = window.setTimeout(() => {
       setListening(false)
-      const captured = mockCapture ? mockCapture() : 60
-      onChange(clampNote(captured))
+      const captured = mockRef.current ? mockRef.current() : 60
+      onChangeRef.current(clampNote(captured))
     }, mockListenMs)
     return () => window.clearTimeout(t)
-  }, [listening, mockCapture, mockListenMs, onChange])
+  }, [listening, mockListenMs])
 
   const commitDraft = () => {
     const trimmed = draft.trim()

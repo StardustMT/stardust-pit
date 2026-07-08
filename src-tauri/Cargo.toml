@@ -32,3 +32,4 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 stardust-core = { workspace = true }
+arc-swap = "1"

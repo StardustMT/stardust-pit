@@ -20,13 +20,15 @@
 import { create } from "zustand"
 import type {
   PatchWire,
+  RigComponentConfig,
+  RigComponentWire,
   RigWire,
   SavedBlockWire,
   ShowDocument,
   ShowWire,
   SongWire,
 } from "@/lib/tauri"
-import type { PatchGraph } from "@/components/patch-graph/_types"
+import { classOf, type NodeKind, type PatchGraph } from "@/components/patch-graph/_types"
 import {
   DEFAULT_RIG,
   LSOH_SONGS,
@@ -48,6 +50,18 @@ interface ShowState {
   setGraph: (patchId: string, graph: PatchGraph) => void
   selectPatch: (patchId: string) => void
   replaceShow: (doc: ShowDocument) => void
+  /**
+   * Rig component CRUD (#122). Components are the unit of hardware
+   * identity; source nodes reference them by id. Deleting a component
+   * leaves referencing nodes unassigned (silent + flagged) — it never
+   * invalidates a show.
+   */
+  addRigComponent: (component: RigComponentWire) => void
+  updateRigComponent: (
+    id: string,
+    patch: { name?: string; config?: Partial<RigComponentConfig> },
+  ) => void
+  removeRigComponent: (id: string) => void
   /**
    * Reset the store to a minimal blank show: one untitled song with one
    * untitled patch holding an empty graph, no rig sources, no saved
@@ -94,6 +108,14 @@ function nextPatchId(songId: string, allPatchIds: Set<string>, patchCount: numbe
   return candidate
 }
 
+/** Pick the next `rc-<N>` id not already in use by any rig component. */
+export function nextRigComponentId(components: RigComponentWire[]): string {
+  const taken = new Set(components.map((c) => c.id))
+  let n = components.length + 1
+  while (taken.has(`rc-${n}`)) n++
+  return `rc-${n}`
+}
+
 /**
  * Minimal blank show used by `newShow()`. One song / one patch / empty
  * graph — gives the user a slot to start dropping nodes into without
@@ -121,7 +143,7 @@ function buildBlankShow(): {
   return {
     showName: "Untitled show",
     songs: [song],
-    rig: { sources: [] },
+    rig: { components: [] },
     savedBlocks: [],
     currentPatchId: patch.id,
   }
@@ -156,15 +178,36 @@ function buildSeedShow(): {
       number: p.number,
       name: p.name,
       compound: p.compound,
-      graph: (variantByPatchId[p.id] ?? casualPatchGraph)(),
+      graph: assignSeedComponents((variantByPatchId[p.id] ?? casualPatchGraph)(), DEFAULT_RIG),
     })),
   }))
   return {
     showName: "Little Shop of Horrors",
     songs,
-    rig: { sources: DEFAULT_RIG },
+    rig: { components: DEFAULT_RIG },
     savedBlocks: [],
     currentPatchId: "p1.1",
+  }
+}
+
+/**
+ * Point every source node in a seed graph at the first rig component of
+ * its kind, so the seed show boots with assigned (not flagged) sources.
+ * Seed-only convenience — real assignment happens in the inspector.
+ */
+function assignSeedComponents(graph: PatchGraph, components: RigComponentWire[]): PatchGraph {
+  const byKind = new Map<NodeKind, string>()
+  for (const c of components) {
+    if (!byKind.has(c.kind)) byKind.set(c.kind, c.id)
+  }
+  return {
+    ...graph,
+    nodes: graph.nodes.map((n) => {
+      if (classOf(n.kind) !== "source") return n
+      const componentId = byKind.get(n.kind)
+      if (!componentId) return n
+      return { ...n, config: { ...n.config, rigComponentId: componentId } }
+    }),
   }
 }
 
@@ -196,6 +239,33 @@ export const useShowStore = create<ShowState>()((set, get) => {
       }),
 
     newShow: () => set({ ...buildBlankShow(), dirty: false }),
+
+    addRigComponent: (component) =>
+      set((s) => ({
+        rig: { components: [...s.rig.components, component] },
+        dirty: true,
+      })),
+
+    updateRigComponent: (id, patch) =>
+      set((s) => ({
+        rig: {
+          components: s.rig.components.map((c) => {
+            if (c.id !== id) return c
+            return {
+              ...c,
+              ...(patch.name !== undefined ? { name: patch.name } : {}),
+              ...(patch.config !== undefined ? { config: { ...c.config, ...patch.config } } : {}),
+            }
+          }),
+        },
+        dirty: true,
+      })),
+
+    removeRigComponent: (id) =>
+      set((s) => ({
+        rig: { components: s.rig.components.filter((c) => c.id !== id) },
+        dirty: true,
+      })),
 
     addSong: () =>
       set((s) => {
@@ -255,7 +325,7 @@ export const useShowStore = create<ShowState>()((set, get) => {
       if (s.savedBlocks.length > 0) show.savedBlocks = s.savedBlocks
       return {
         kind: "stardust.show",
-        schemaVersion: 1,
+        schemaVersion: 3,
         stardustVersion: "0.6.0",
         savedAt: new Date().toISOString(),
         show,

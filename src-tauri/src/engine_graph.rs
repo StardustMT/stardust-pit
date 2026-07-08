@@ -72,29 +72,36 @@ pub const EVENT_QUEUE: usize = 1024;
 pub const STEREO_CHANNELS: u32 = 2;
 
 // =============================================================================
-// Hardware MIDI bindings (per-source routing, stardust-pit#2)
+// Hardware MIDI routing via rig components (stardust-pit#122)
 //
-// Each source node may carry a `hardwareBinding` object in its free-form
-// config (per ADR-0004 the strong typing lives here, not in the schema):
+// Hardware identity lives on the show's rig components (schema v3); a
+// source node references a component through `config.rigComponentId` and
+// inherits its binding. A component's free-form config carries (per
+// ADR-0004 — strong typing lives here, not in the schema):
 //
 // ```json
 // {
-//   "hardwareBinding": {
-//     "deviceId": "12345" | null,      // opaque midir port id; null = any
-//     "deviceName": "Yamaha P-125",    // display + fallback match key
-//     "channel": 1..16 | null,          // null = any channel
-//     "noteRange": [21, 108] | null,
-//     "ccRange": [0, 127] | null
-//   }
+//   "device": { "id": "12345" | null, "name": "Yamaha P-125" },
+//   "channel": 1..16,                  // absent = any channel
+//   "lowNote": 21, "highNote": 108,    // keyboard learned key range
+//   "rows": 2, "cols": 8,              // pads grid
+//   "padNotes": [36, 37, null, ...],   // pads learned notes (stored; per-
+//                                      //   note routing consumed v0.10.0)
+//   "source": { "type": "cc", "cc": 64 } // learned controller CC source
+//                | { "type": "pitchBend" },
+//   "ccRange": [0, 127]                // migrated v2 narrowing, still honored
 // }
 // ```
 //
-// A missing binding behaves as all-null: match any device, no filters —
-// which is the v0.5.0 single-device back-compat path. Device matching
-// happens on the engine thread when a device is opened (it owns the full
-// device list); per-event filtering happens in the midir callback via
-// [`EventFilter::accepts`], so the audio thread never sees an event that
-// isn't already addressed to a specific source node.
+// A source node with no component (or a dangling / unbound component) is
+// **silent** on the hardware path — there is no any-device fallback. The
+// on-screen keyboard still reaches it via [`Plan::inject_ui`], which fans
+// out by node-kind event class only.
+//
+// Device matching happens on the engine thread when a device is opened
+// (it owns the full device list); per-event filtering happens in the
+// midir callback via [`EventFilter::accepts`], so the audio thread never
+// sees an event that isn't already addressed to a specific source node.
 // =============================================================================
 
 /// Device-independent per-event filter for one source node. What a source
@@ -181,85 +188,193 @@ fn kind_accepts(kind: NodeKind, msg: MidiMessage) -> bool {
     }
 }
 
-/// One source node's hardware binding, resolved from its config. The
-/// engine thread uses the device identity to decide which opened MIDI
-/// connections feed the node; the [`EventFilter`] rides along into the
-/// midir callback for per-event narrowing.
+/// One rig component's binding, parsed once from the show's rig so the
+/// engine never re-walks raw JSON per device open.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComponentBinding {
+    /// The component's id — what a source node's `rigComponentId` names.
+    pub component_id: String,
+    pub kind: NodeKind,
+    /// Opaque midir port id. `None` with a `device_name` = name-only
+    /// binding (id vanished or was never known).
+    pub device_id: Option<String>,
+    /// Display name; the fallback match key when the id isn't connected
+    /// (ids are not stable on every OS).
+    pub device_name: Option<String>,
+    /// 0-based MIDI channel narrowing; `None` = any.
+    pub channel: Option<u8>,
+    /// Keyboard learned key range (inclusive note bounds).
+    pub note_range: Option<(u8, u8)>,
+    /// CC narrowing: a learned CC source (`[cc, cc]`) or a migrated v2
+    /// `ccRange`.
+    pub cc_range: Option<(u8, u8)>,
+}
+
+impl ComponentBinding {
+    /// Whether the component is bound to hardware at all. Unbound
+    /// components (created in Setup, never Learned) feed nothing.
+    pub fn is_bound(&self) -> bool {
+        self.device_id.is_some() || self.device_name.is_some()
+    }
+
+    /// Does this binding match a connected device `(id, name)`? Identity
+    /// wins; the display name is only consulted when no connected device
+    /// carries the bound id (`id_present_elsewhere` = the engine checked
+    /// the full device list). There is no any-device case — an unbound
+    /// component matches nothing.
+    pub fn matches_device(&self, id: &str, name: &str, id_present_elsewhere: bool) -> bool {
+        match (&self.device_id, &self.device_name) {
+            (Some(bound), _) if bound == id => true,
+            (Some(_), Some(n)) if !id_present_elsewhere => n == name,
+            (Some(_), _) => false,
+            (None, Some(n)) => n == name,
+            (None, None) => false,
+        }
+    }
+}
+
+/// Parse every component of the show's rig into engine-consumable
+/// bindings. Tolerant of malformed config (per ADR-0004 the bag is
+/// free-form) — unusable fields degrade to `None`.
+pub fn parse_rig(rig: &stardust_core::show::Rig) -> Vec<ComponentBinding> {
+    rig.components
+        .iter()
+        .map(|c| {
+            let cfg = c.config.as_ref().and_then(|v| v.as_object());
+            let device = cfg
+                .and_then(|c| c.get("device"))
+                .and_then(|d| d.as_object());
+            let device_id = device
+                .and_then(|d| d.get("id"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            let device_name = device
+                .and_then(|d| d.get("name"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let channel = cfg
+                .and_then(|c| c.get("channel"))
+                .and_then(|v| v.as_u64())
+                .filter(|ch| (1..=16).contains(ch))
+                .map(|ch| (ch - 1) as u8);
+            let get_note = |key: &str| -> Option<u8> {
+                cfg.and_then(|c| c.get(key))
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n.min(127) as u8)
+            };
+            let note_range = match (get_note("lowNote"), get_note("highNote")) {
+                (Some(lo), Some(hi)) => Some((lo.min(hi), lo.max(hi))),
+                _ => None,
+            };
+            // CC narrowing: learned single-CC source wins; otherwise a
+            // migrated v2 ccRange.
+            let source_cc = cfg
+                .and_then(|c| c.get("source"))
+                .and_then(|s| s.as_object())
+                .filter(|s| s.get("type").and_then(|t| t.as_str()) == Some("cc"))
+                .and_then(|s| s.get("cc"))
+                .and_then(|v| v.as_u64())
+                .map(|cc| (cc.min(127) as u8, cc.min(127) as u8));
+            let cc_range = source_cc.or_else(|| {
+                let arr = cfg.and_then(|c| c.get("ccRange"))?.as_array()?;
+                let lo = arr.first()?.as_u64()?.min(127) as u8;
+                let hi = arr.get(1)?.as_u64()?.min(127) as u8;
+                Some((lo.min(hi), lo.max(hi)))
+            });
+            ComponentBinding {
+                component_id: c.id.as_str().to_owned(),
+                kind: c.kind,
+                device_id,
+                device_name,
+                channel,
+                note_range,
+                cc_range,
+            }
+        })
+        .collect()
+}
+
+/// One source node's resolved hardware routing: which rig component's
+/// device feeds it, and the per-event filter that rides into the midir
+/// callback. Only nodes with a *bound* component get a spec — everything
+/// else is silent on the hardware path.
 #[derive(Debug, Clone)]
 pub struct SourceFilterSpec {
     /// Index of the source node in `PatchGraph::nodes` (== plan index).
     pub node: usize,
-    /// Opaque midir port id this node is bound to. `None` = any device.
-    pub device_id: Option<String>,
-    /// Display name, used as the fallback match key when no connected
-    /// device carries `device_id` (ids are not stable on every OS).
-    pub device_name: Option<String>,
+    /// The component binding this node resolved to.
+    pub binding: ComponentBinding,
     /// Per-event filter (kind class + channel / note / CC narrowing).
     pub filter: EventFilter,
 }
 
 impl SourceFilterSpec {
-    /// Does this binding match a connected device `(id, name)`? Identity
-    /// wins; the display name is only consulted when no connected device
-    /// carries the bound id (`id_present_elsewhere` = the engine checked
-    /// the full device list).
+    /// See [`ComponentBinding::matches_device`].
     pub fn matches_device(&self, id: &str, name: &str, id_present_elsewhere: bool) -> bool {
-        match &self.device_id {
-            None => true,
-            Some(bound) if bound == id => true,
-            Some(_) if id_present_elsewhere => false,
-            Some(_) => self.device_name.as_deref() == Some(name),
-        }
+        self.binding.matches_device(id, name, id_present_elsewhere)
     }
 }
 
-/// Resolve every source node's hardware binding from the patch graph.
-/// Nodes without a binding get the all-null spec (any device, kind-class
-/// filter only) — the v0.5.0 back-compat behavior.
-pub fn source_event_filters(graph: &PatchGraph) -> Vec<SourceFilterSpec> {
-    source_filters_for_nodes(&graph.nodes)
+/// The id a source node uses to reference its rig component, if any.
+pub fn node_rig_component_id(node: &GraphNode) -> Option<&str> {
+    node.config
+        .as_ref()
+        .and_then(|c| c.get("rigComponentId"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
-fn source_filters_for_nodes(nodes: &[GraphNode]) -> Vec<SourceFilterSpec> {
+/// Resolve every source node against the rig: node → `rigComponentId` →
+/// component binding → filter spec. Nodes that are unassigned, reference
+/// a deleted component, or reference an unbound component produce no
+/// spec (silent + flagged in the UI; locked in #122 refinement).
+pub fn source_event_filters(
+    graph: &PatchGraph,
+    bindings: &[ComponentBinding],
+) -> Vec<SourceFilterSpec> {
     use stardust_core::patch::NodeClass;
     let mut out = Vec::new();
-    for (i, n) in nodes.iter().enumerate() {
+    for (i, n) in graph.nodes.iter().enumerate() {
         if n.kind.class() != NodeClass::Source {
             continue;
         }
-        let binding = n
-            .config
-            .as_ref()
-            .and_then(|c| c.get("hardwareBinding"))
-            .and_then(|b| b.as_object());
-        let get_str = |key: &str| -> Option<String> {
-            binding
-                .and_then(|b| b.get(key))
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
+        let Some(component_id) = node_rig_component_id(n) else {
+            continue;
         };
-        let get_range = |key: &str| -> Option<(u8, u8)> {
-            let arr = binding.and_then(|b| b.get(key))?.as_array()?;
-            let lo = arr.first()?.as_u64()?.min(127) as u8;
-            let hi = arr.get(1)?.as_u64()?.min(127) as u8;
-            Some((lo.min(hi), lo.max(hi)))
+        let Some(binding) = bindings.iter().find(|b| b.component_id == component_id) else {
+            continue;
         };
-        let channel = binding
-            .and_then(|b| b.get("channel"))
-            .and_then(|v| v.as_u64())
-            .filter(|c| (1..=16).contains(c))
-            .map(|c| (c - 1) as u8);
+        if !binding.is_bound() {
+            continue;
+        }
         out.push(SourceFilterSpec {
             node: i,
-            device_id: get_str("deviceId"),
-            device_name: get_str("deviceName"),
             filter: EventFilter {
                 kind: n.kind,
-                channel,
-                note_range: get_range("noteRange"),
-                cc_range: get_range("ccRange"),
+                channel: binding.channel,
+                note_range: binding.note_range,
+                cc_range: binding.cc_range,
             },
+            binding: binding.clone(),
         });
+    }
+    out
+}
+
+/// The distinct hardware devices the rig binds, in component order. The
+/// engine opens the union of these session-wide — patch switches never
+/// change the open set (#122).
+pub fn rig_bound_devices(bindings: &[ComponentBinding]) -> Vec<(Option<String>, Option<String>)> {
+    let mut out: Vec<(Option<String>, Option<String>)> = Vec::new();
+    for b in bindings {
+        if !b.is_bound() {
+            continue;
+        }
+        let key = (b.device_id.clone(), b.device_name.clone());
+        if !out.contains(&key) {
+            out.push(key);
+        }
     }
     out
 }
@@ -314,7 +429,11 @@ impl VoiceBits {
 /// port) are *not* errors. Those silently produce a [`PlannedNode::Silent`]
 /// or a zero-fill at the consumer side.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum PlanBuildError {
     AudioCycle { involved_nodes: Vec<String> },
     UnknownWireEndpoint { wire: String, side: &'static str },
@@ -1283,11 +1402,26 @@ impl PlanBuilder {
             self.nodes.push(planned);
         }
 
-        // UI-event fan-out targets: every source node's device-agnostic
-        // event filter (the on-screen keyboard ignores device bindings).
-        self.ui_filters = source_filters_for_nodes(&graph.nodes)
-            .into_iter()
-            .map(|s| (s.node, s.filter))
+        // UI-event fan-out targets: every source node by kind-class only.
+        // The on-screen keyboard is a stand-in for whatever hardware the
+        // source represents, so rig bindings (device, channel, ranges)
+        // are deliberately ignored — an unassigned node still previews.
+        self.ui_filters = graph
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.kind.class() == stardust_core::patch::NodeClass::Source)
+            .map(|(i, n)| {
+                (
+                    i,
+                    EventFilter {
+                        kind: n.kind,
+                        channel: None,
+                        note_range: None,
+                        cc_range: None,
+                    },
+                )
+            })
             .collect();
     }
 
@@ -2370,15 +2504,45 @@ mod tests {
     }
 
     // -------------------------------------------------------------
-    // Hardware binding + per-source routing (#2)
+    // Rig-component routing (#122, superseding the #2 node bindings)
     // -------------------------------------------------------------
 
-    fn binding_config(json: serde_json::Value) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "hardwareBinding": json }))
+    fn component_ref(id: &str) -> Option<serde_json::Value> {
+        Some(serde_json::json!({ "rigComponentId": id }))
     }
 
-    /// kbd → testtone → sink twice over, with each keyboard bound to a
-    /// different device id. Injection isolation is asserted via the
+    fn rig_with(components: Vec<(&str, NodeKind, serde_json::Value)>) -> stardust_core::show::Rig {
+        stardust_core::show::Rig {
+            components: components
+                .into_iter()
+                .map(|(id, kind, config)| stardust_core::show::RigComponent {
+                    id: id.into(),
+                    kind,
+                    name: id.to_owned(),
+                    config: if config.is_null() { None } else { Some(config) },
+                })
+                .collect(),
+        }
+    }
+
+    /// Two keyboard components bound to distinct devices.
+    fn two_keyboard_rig() -> stardust_core::show::Rig {
+        rig_with(vec![
+            (
+                "rc-a",
+                NodeKind::SourceKeyboard,
+                serde_json::json!({ "device": { "id": "dev-a", "name": "Keyboard A" } }),
+            ),
+            (
+                "rc-b",
+                NodeKind::SourceKeyboard,
+                serde_json::json!({ "device": { "id": "dev-b", "name": "Keyboard B" } }),
+            ),
+        ])
+    }
+
+    /// kbd → testtone → sink twice over, with each keyboard referencing a
+    /// different rig component. Injection isolation is asserted via the
     /// per-instrument voice tracker.
     fn two_keyboard_graph() -> PatchGraph {
         fn stereo(id: &str, dir: PortDirection, ch: StereoChannel) -> Port {
@@ -2391,15 +2555,9 @@ mod tests {
             }
         }
         let mut kb1 = node("kb1", NodeKind::SourceKeyboard, vec![midi_out("out")]);
-        kb1.config = binding_config(serde_json::json!({
-            "deviceId": "dev-a",
-            "deviceName": "Keyboard A"
-        }));
+        kb1.config = component_ref("rc-a");
         let mut kb2 = node("kb2", NodeKind::SourceKeyboard, vec![midi_out("out")]);
-        kb2.config = binding_config(serde_json::json!({
-            "deviceId": "dev-b",
-            "deviceName": "Keyboard B"
-        }));
+        kb2.config = component_ref("rc-b");
         let tt1 = node(
             "tt1",
             NodeKind::InstrumentTestTone,
@@ -2458,7 +2616,8 @@ mod tests {
     #[test]
     fn bound_keyboards_receive_only_their_devices_events() {
         let graph = two_keyboard_graph();
-        let specs = source_event_filters(&graph);
+        let bindings = parse_rig(&two_keyboard_rig());
+        let specs = source_event_filters(&graph, &bindings);
         assert_eq!(specs.len(), 2);
         assert!(specs[0].matches_device("dev-a", "Keyboard A", true));
         assert!(!specs[0].matches_device("dev-b", "Keyboard B", true));
@@ -2477,17 +2636,33 @@ mod tests {
     }
 
     #[test]
-    fn unbound_source_matches_any_device() {
-        let kb = node("kb", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+    fn unassigned_dangling_and_unbound_sources_get_no_hardware_route() {
+        // Three keyboards: no component, a deleted component id, and a
+        // component that exists but was never bound to a device. All
+        // three are silent on the hardware path (#122: no any-device
+        // fallback).
+        let kb1 = node("kb1", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+        let mut kb2 = node("kb2", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+        kb2.config = component_ref("rc-deleted");
+        let mut kb3 = node("kb3", NodeKind::SourceKeyboard, vec![midi_out("out")]);
+        kb3.config = component_ref("rc-unbound");
         let graph = PatchGraph {
-            nodes: vec![kb],
+            nodes: vec![kb1, kb2, kb3],
             wires: vec![],
             composites: vec![],
         };
-        let specs = source_event_filters(&graph);
-        assert_eq!(specs.len(), 1);
-        assert!(specs[0].matches_device("anything", "Whatever", true));
-        assert!(specs[0].filter.accepts(note_on(5, 60)));
+        let rig = rig_with(vec![(
+            "rc-unbound",
+            NodeKind::SourceKeyboard,
+            serde_json::Value::Null,
+        )]);
+        let specs = source_event_filters(&graph, &parse_rig(&rig));
+        assert!(specs.is_empty(), "specs: {specs:?}");
+
+        // The on-screen keyboard still reaches all three (kind-class
+        // fan-out ignores rig assignment).
+        let plan = Plan::build(&graph).expect("plan builds").plan;
+        assert_eq!(plan.ui_filters.len(), 3);
     }
 
     #[test]
@@ -2536,21 +2711,32 @@ mod tests {
     }
 
     #[test]
-    fn binding_config_parses_ranges_and_channel() {
+    fn component_config_parses_ranges_and_channel() {
         let mut kb = node("kb", NodeKind::SourceKeyboard, vec![midi_out("out")]);
-        kb.config = binding_config(serde_json::json!({
-            "deviceId": null,
-            "channel": 3,
-            "noteRange": [21, 108],
-            "ccRange": [0, 63]
-        }));
+        kb.config = component_ref("rc-1");
         let graph = PatchGraph {
             nodes: vec![kb],
             wires: vec![],
             composites: vec![],
         };
-        let spec = &source_event_filters(&graph)[0];
-        assert_eq!(spec.device_id, None);
+        let rig = rig_with(vec![(
+            "rc-1",
+            NodeKind::SourceKeyboard,
+            serde_json::json!({
+                "device": { "id": null, "name": "Test Keys" },
+                "channel": 3,
+                "lowNote": 21,
+                "highNote": 108,
+                "ccRange": [0, 63]
+            }),
+        )]);
+        let bindings = parse_rig(&rig);
+        let specs = source_event_filters(&graph, &bindings);
+        let spec = &specs[0];
+        // id null + name = name-only binding, not any-device.
+        assert_eq!(spec.binding.device_id, None);
+        assert!(spec.matches_device("whatever", "Test Keys", false));
+        assert!(!spec.matches_device("whatever", "Other", false));
         assert!(
             spec.filter.accepts(note_on(2, 60)),
             "channel 3 is 0-based 2"
@@ -2567,6 +2753,52 @@ mod tests {
             cc: 1,
             value: 1
         }));
+    }
+
+    #[test]
+    fn learned_cc_source_narrows_to_single_cc() {
+        let mut sus = node("sus", NodeKind::SourceSustainPedal, vec![midi_out("out")]);
+        sus.config = component_ref("rc-sus");
+        let graph = PatchGraph {
+            nodes: vec![sus],
+            wires: vec![],
+            composites: vec![],
+        };
+        let rig = rig_with(vec![(
+            "rc-sus",
+            NodeKind::SourceSustainPedal,
+            serde_json::json!({
+                "device": { "id": "dev-1", "name": "Pedal Board" },
+                "channel": 1,
+                "source": { "type": "cc", "cc": 64 }
+            }),
+        )]);
+        let specs = source_event_filters(&graph, &parse_rig(&rig));
+        assert_eq!(specs[0].binding.cc_range, Some((64, 64)));
+    }
+
+    #[test]
+    fn rig_bound_devices_dedupe_across_components() {
+        let rig = rig_with(vec![
+            (
+                "rc-1",
+                NodeKind::SourceKeyboard,
+                serde_json::json!({ "device": { "id": "dev-1", "name": "Keys" } }),
+            ),
+            (
+                "rc-2",
+                NodeKind::SourceSustainPedal,
+                serde_json::json!({ "device": { "id": "dev-1", "name": "Keys" } }),
+            ),
+            (
+                "rc-3",
+                NodeKind::SourcePads,
+                serde_json::json!({ "device": { "id": "dev-2", "name": "Pads" } }),
+            ),
+            ("rc-4", NodeKind::SourceKnob, serde_json::Value::Null),
+        ]);
+        let devices = rig_bound_devices(&parse_rig(&rig));
+        assert_eq!(devices.len(), 2, "dev-1 shared, rc-4 unbound: {devices:?}");
     }
 
     #[test]
@@ -2809,12 +3041,11 @@ mod tests {
         assert_eq!(counts.midi_transpose, 1);
         assert_eq!(counts.audio_mix, 1);
 
-        // The keyboard is the only hardware-bindable source, matching
-        // any device (no explicit binding).
-        let specs = source_event_filters(&graph);
-        assert_eq!(specs.len(), 1);
-        assert_eq!(specs[0].node, 0);
-        assert_eq!(specs[0].device_id, None);
+        // The keyboard has no rig component assigned — no hardware
+        // route (silent), but the UI keyboard still reaches it.
+        let specs = source_event_filters(&graph, &[]);
+        assert!(specs.is_empty());
+        assert_eq!(out.plan.ui_filters.len(), 1);
 
         // Both keyboard zone wires must produce MIDI routes with zone
         // filters distinct from each other.
@@ -2859,12 +3090,63 @@ mod tests {
         const RAW: &str = include_str!("../tests/fixtures/v0.5.0-sine-show.json");
         let doc = stardust_core::show::ShowDocument::from_json(RAW)
             .expect("v0.5.0 sine fixture parses + migrates");
-        assert_eq!(doc.header.schema_version, 2);
+        assert_eq!(
+            doc.header.schema_version,
+            stardust_core::show::CURRENT_SCHEMA_VERSION
+        );
         let patch = &doc.show.songs[0].patches[0];
         let result = render_self_test(&patch.graph).expect("plan + render succeeds");
         assert!(
             result.passed,
             "v0.5.0 fixture after migration produced only {} dBFS RMS",
+            result.peak_rms_dbfs
+        );
+    }
+
+    /// Per the #122 migration AC: a #2-era (schema v2) show with a
+    /// node-level `hardwareBinding` loads, auto-creates an equivalent
+    /// rig component, routes the node through it, and plays unchanged.
+    #[test]
+    fn v2_bound_show_migrates_to_rig_components_and_plays() {
+        const RAW: &str = include_str!("../tests/fixtures/v0.6.0-bound-show.json");
+        let doc = stardust_core::show::ShowDocument::from_json(RAW)
+            .expect("v2 bound fixture parses + migrates");
+        assert_eq!(
+            doc.header.schema_version,
+            stardust_core::show::CURRENT_SCHEMA_VERSION
+        );
+
+        // The label-only rig source + the harvested bound keyboard.
+        assert_eq!(doc.show.rig.components.len(), 2);
+        let bindings = parse_rig(&doc.show.rig);
+        let bound: Vec<_> = bindings.iter().filter(|b| b.is_bound()).collect();
+        assert_eq!(bound.len(), 1);
+        assert_eq!(bound[0].device_id.as_deref(), Some("port-1234"));
+        assert_eq!(bound[0].channel, Some(0), "channel 1 is 0-based 0");
+        assert_eq!(bound[0].note_range, Some((21, 108)));
+
+        // The node references the migrated component; the blob is gone.
+        let patch = &doc.show.songs[0].patches[0];
+        let kbd = &patch.graph.nodes[0];
+        assert!(
+            kbd.config
+                .as_ref()
+                .and_then(|c| c.get("hardwareBinding"))
+                .is_none()
+        );
+        let specs = source_event_filters(&patch.graph, &bindings);
+        assert_eq!(specs.len(), 1);
+        assert!(specs[0].matches_device("port-1234", "Legacy Test Keys", true));
+
+        // The engine opens exactly the one bound device.
+        let devices = rig_bound_devices(&bindings);
+        assert_eq!(devices.len(), 1);
+
+        // And the patch still renders audio.
+        let result = render_self_test(&patch.graph).expect("plan + render succeeds");
+        assert!(
+            result.passed,
+            "v2 bound fixture after migration produced only {} dBFS RMS",
             result.peak_rms_dbfs
         );
     }

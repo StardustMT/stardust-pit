@@ -1,12 +1,14 @@
 import * as React from "react"
+import { AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NodeBody } from "./node-body"
 import { typeLabelFor } from "./_catalog"
+import { useRigComponents } from "./rig-context"
 import {
   CLASS_COLORS,
   classOf,
-  getHardwareBinding,
   getPluginChoice,
+  getRigComponentId,
   SIGNAL_DEFAULT_COLORS,
   type GraphNode,
   type Port,
@@ -101,8 +103,15 @@ export function PatchNode({
   const widgetBlockHeight = minBodyHeightForKind(node.kind)
   const bodyContentHeight = Math.max(portsBlockHeight, widgetBlockHeight)
   const isInstrument = cls === "instrument"
-  const binding = getHardwareBinding(node)
-  const deviceLabel = binding?.deviceId ? (binding.deviceName ?? binding.deviceId) : undefined
+  // Rig assignment (#122): a source node is silent on hardware until it
+  // references a rig component. Footer shows the component name, or an
+  // unassigned/dangling warning.
+  const rigComponents = useRigComponents()
+  const isSource = cls === "source"
+  const componentId = getRigComponentId(node)
+  const component = componentId ? rigComponents.find((c) => c.id === componentId) : undefined
+  const componentLabel = component?.name
+  const unassigned = isSource && (componentId === undefined || component === undefined)
 
   // Variable width: scale to fit longest label among the type-label, the
   // user name, and the longest port-row left+right combo.
@@ -266,10 +275,20 @@ export function PatchNode({
         </div>
       </div>
 
-      {/* Live device label for bound sources (#2): "← Yamaha P-125". */}
-      {deviceLabel && (
+      {/* Rig component footer (#122): "← Nord Stage 3 keys", or the
+       *  unassigned/dangling flag — the node is silent on hardware. */}
+      {componentLabel && (
         <div className="truncate border-t border-border/60 px-2.5 py-1 text-[9px] italic text-muted-foreground">
-          ← {deviceLabel}
+          ← {componentLabel}
+        </div>
+      )}
+      {unassigned && (
+        <div
+          role="status"
+          className="flex items-center gap-1 truncate border-t border-border/60 px-2.5 py-1 text-[9px] italic text-amber-500"
+        >
+          <AlertTriangle className="size-2.5 shrink-0" />
+          {componentId === undefined ? "no input assigned" : "component deleted"}
         </div>
       )}
 

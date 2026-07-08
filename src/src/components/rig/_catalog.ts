@@ -10,6 +10,9 @@
  * pre-wired).
  */
 
+import type { NodeKind } from "@/components/patch-graph/_types"
+import type { RigComponentConfig, RigComponentWire } from "@/lib/tauri"
+
 export type RigComponentGroup = "instrument" | "controller"
 
 export type RigComponentKind =
@@ -97,60 +100,36 @@ export function findComponent(kind: RigComponentKind): RigComponentSpec | undefi
 }
 
 // =============================================================================
-// Per-instance configuration model
+// Kind mapping — catalog kind ↔ source.* NodeKind
+//
+// The 9 catalog kinds correspond 1:1 to the 9 `source.*` node kinds: a
+// source node in a patch *is* a rig component appearing in that patch
+// (#122). Persisted components carry the NodeKind form.
 // =============================================================================
 
-/**
- * A placed rig component instance — type + per-instance config.
- * The config bag carries kind-specific settings; only fields relevant to
- * the kind are meaningful (e.g. `lowNote` only applies to "keyboard").
- */
-export interface RigComponentInstance {
-  instanceId: string
-  name: string
-  kind: RigComponentKind
-
-  // Common across most kinds
-  midiInput?: string // Learn captures this — e.g. "USB MIDI Port 1"
-  midiChannel?: number // 1..16; undefined = omni
-
-  // Keyboard — keys are derived from learned [lowNote, highNote]
-  lowNote?: number // MIDI note number, 0..127
-  highNote?: number // MIDI note number, 0..127
-
-  // Pads — flat row-major grid; padAssignments[row*cols + col] = learned note
-  rows?: number
-  cols?: number
-  padAssignments?: Array<{ note?: number } | undefined>
-
-  // Switch + Sustain pedal
-  switchMode?: "momentary" | "toggle"
-  switchSource?: string // Learn — "CC 64 ch 1"
-
-  // Expression pedal
-  expressionSource?: string // Learn
-  polarity?: "normal" | "inverted"
-  expressionMin?: number // 0..127
-  expressionMax?: number // 0..127
-
-  // Pitch wheel
-  pitchSource?: string // Learn — "Pitch bend ch 1"
-  pitchRangeSemitones?: number // default 2
-
-  // Mod wheel
-  modSource?: string // Learn — "CC 1 ch 1"
-
-  // Knob / Fader
-  controlSource?: string // Learn — "CC 7 ch 1"
-  controlRange?: "absolute" | "relative"
+export function nodeKindFor(kind: RigComponentKind): NodeKind {
+  return `source.${kind}` as NodeKind
 }
 
-export function defaultsForKind(kind: RigComponentKind): Partial<RigComponentInstance> {
+export function rigKindFor(kind: NodeKind): RigComponentKind | undefined {
+  if (!kind.startsWith("source.")) return undefined
+  return kind.slice("source.".length) as RigComponentKind
+}
+
+// =============================================================================
+// Component construction + display helpers
+//
+// The persisted shape is `RigComponentWire` (`lib/tauri.ts`, mirroring
+// `stardust_show::RigComponent`); the helpers here build sensible
+// defaults per kind and derive display strings from the config bag.
+// =============================================================================
+
+export function defaultConfigForKind(kind: RigComponentKind): RigComponentConfig {
   switch (kind) {
     case "keyboard":
-      return { midiChannel: 1 }
+      return { channel: 1 }
     case "pads":
-      return { rows: 4, cols: 4, midiChannel: 10, padAssignments: [] }
+      return { rows: 4, cols: 4, channel: 10, padNotes: [] }
     case "switch":
       return { switchMode: "momentary" }
     case "sustain-pedal":
@@ -166,6 +145,68 @@ export function defaultsForKind(kind: RigComponentKind): Partial<RigComponentIns
     case "fader":
       return { controlRange: "absolute" }
   }
+}
+
+/** Human string for a component's captured MIDI source, e.g. "CC 64 · ch 1". */
+export function sourceLabel(config: RigComponentConfig | undefined): string | undefined {
+  if (!config?.source) return undefined
+  const ch = config.channel !== undefined ? ` · ch ${config.channel}` : ""
+  switch (config.source.type) {
+    case "cc":
+      return `CC ${config.source.cc}${ch}`
+    case "pitchBend":
+      return `Pitch bend${ch}`
+    case "note":
+      return `Note ${noteLabel(config.source.note)}${ch}`
+  }
+}
+
+/** Human string for a component's device binding, or undefined if unbound. */
+export function deviceLabel(config: RigComponentConfig | undefined): string | undefined {
+  const device = config?.device
+  if (!device) return undefined
+  return device.name || (device.id ?? undefined)
+}
+
+/** One-line summary for outlines / cards. */
+export function summaryFor(c: RigComponentWire): string {
+  const cfg = c.config
+  const kind = rigKindFor(c.kind)
+  switch (kind) {
+    case "keyboard": {
+      const kc = keyCount(cfg?.lowNote, cfg?.highNote)
+      const range =
+        cfg?.lowNote !== undefined && cfg?.highNote !== undefined
+          ? `${noteLabel(cfg.lowNote)}–${noteLabel(cfg.highNote)}`
+          : "range not learned"
+      return `${kc ?? "?"} keys · ${range} · ch ${cfg?.channel ?? "—"}`
+    }
+    case "pads": {
+      const r = cfg?.rows ?? 0
+      const cols = cfg?.cols ?? 0
+      const learned = (cfg?.padNotes ?? []).filter((n) => n !== null && n !== undefined).length
+      return `${r}×${cols} · ${learned}/${r * cols} learned · ch ${cfg?.channel ?? "—"}`
+    }
+    case "switch":
+      return `${cfg?.switchMode ?? "—"} · ${sourceLabel(cfg) ?? "unassigned"}`
+    case "sustain-pedal":
+    case "mod-wheel":
+      return sourceLabel(cfg) ?? "unassigned"
+    case "expression-pedal":
+      return `${cfg?.polarity ?? "—"} · ${sourceLabel(cfg) ?? "unassigned"}`
+    case "pitch-wheel":
+      return `±${cfg?.pitchRangeSemitones ?? 2} st · ${sourceLabel(cfg) ?? "unassigned"}`
+    case "knob":
+    case "fader":
+      return `${cfg?.controlRange ?? "—"} · ${sourceLabel(cfg) ?? "unassigned"}`
+    default:
+      return c.kind
+  }
+}
+
+/** Whether the component has a hardware device bound (Learned). */
+export function isBound(c: RigComponentWire): boolean {
+  return c.config?.device !== undefined
 }
 
 // =============================================================================

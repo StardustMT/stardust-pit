@@ -42,7 +42,7 @@ fn rebind_swaps_stream_without_teardown_under_load() {
     handle
         .send(EngineCommand::Start(StartConfig {
             graph: self_test_graph(),
-            midi_inputs: vec![],
+            rig: stardust_core::show::Rig::default(),
             audio_output: None,
         }))
         .expect("start queued");
@@ -102,7 +102,7 @@ fn rebind_to_missing_device_keeps_original_active() {
     handle
         .send(EngineCommand::Start(StartConfig {
             graph: self_test_graph(),
-            midi_inputs: vec![],
+            rig: stardust_core::show::Rig::default(),
             audio_output: None,
         }))
         .expect("start queued");
