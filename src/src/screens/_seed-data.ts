@@ -12,7 +12,7 @@
 
 import { makeNode } from "@/components/patch-graph/_catalog"
 import type { PatchGraph } from "@/components/patch-graph/_types"
-import type { RigSource } from "@/components/patch-graph/right-panel"
+import type { RigComponentWire } from "@/lib/tauri"
 import type { OutlineSong as ShowOutlineSong } from "@/components/show/show-outline"
 
 // =============================================================================
@@ -271,21 +271,55 @@ export function compositeBlockPatchGraph(): PatchGraph {
 }
 
 // =============================================================================
-// Rig sources
+// Rig components (schema v3, #122)
+//
+// Seed components are unbound — device identity is machine-specific, so
+// the user Learns their own hardware in Setup. Config bags carry the
+// kind defaults + demo learned data where it makes the UI readable.
 // =============================================================================
 
-export const DEFAULT_RIG: RigSource[] = [
-  { kind: "source.keyboard", label: "Nord Stage 3 keys" },
-  { kind: "source.sustain-pedal", label: "Sustain pedal" },
-  { kind: "source.expression-pedal", label: "Expression pedal" },
-  { kind: "source.mod-wheel", label: "Mod wheel" },
-  { kind: "source.pitch-wheel", label: "Pitch bend" },
+export const DEFAULT_RIG: RigComponentWire[] = [
+  {
+    id: "rc-1",
+    kind: "source.keyboard",
+    name: "Nord Stage 3 keys",
+    config: { channel: 1, lowNote: 21, highNote: 108 },
+  },
+  {
+    id: "rc-2",
+    kind: "source.sustain-pedal",
+    name: "Sustain pedal",
+    config: { switchMode: "momentary", source: { type: "cc", cc: 64 }, channel: 1 },
+  },
+  {
+    id: "rc-3",
+    kind: "source.expression-pedal",
+    name: "Expression pedal",
+    config: { polarity: "normal", expressionMin: 0, expressionMax: 127 },
+  },
+  {
+    id: "rc-4",
+    kind: "source.mod-wheel",
+    name: "Mod wheel",
+    config: { source: { type: "cc", cc: 1 }, channel: 1 },
+  },
+  {
+    id: "rc-5",
+    kind: "source.pitch-wheel",
+    name: "Pitch bend",
+    config: { pitchRangeSemitones: 2, source: { type: "pitchBend" }, channel: 1 },
+  },
 ]
 
-export const FULL_RIG: RigSource[] = [
+export const FULL_RIG: RigComponentWire[] = [
   ...DEFAULT_RIG,
-  { kind: "source.pads", label: "Akai LPD-8 pads" },
-  { kind: "source.switch", label: "Page-turn switch" },
-  { kind: "source.knob", label: "Mod knob A" },
-  { kind: "source.fader", label: "Volume fader" },
+  {
+    id: "rc-6",
+    kind: "source.pads",
+    name: "Akai LPD-8 pads",
+    config: { rows: 2, cols: 4, channel: 10, padNotes: [36, 37, 38, 39, null, null, null, null] },
+  },
+  { id: "rc-7", kind: "source.switch", name: "Page-turn switch", config: { switchMode: "toggle" } },
+  { id: "rc-8", kind: "source.knob", name: "Mod knob A", config: { controlRange: "absolute" } },
+  { id: "rc-9", kind: "source.fader", name: "Volume fader", config: { controlRange: "absolute" } },
 ]

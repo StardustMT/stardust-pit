@@ -91,7 +91,7 @@ export interface HostedPluginStatus {
 
 /**
  * Counts of native DSP / MIDI nodes the running plan is executing.
- * Surfaced in EnginePanel as a one-line summary.
+ * Surfaced in the status footer as a one-line summary.
  */
 export interface NativeNodeCounts {
   testTone: number
@@ -131,16 +131,25 @@ export type EngineStatus =
 export type EngineStartError = { kind: "engine"; message: string }
 
 /**
- * Start the engine from the currently-selected patch. The Rust side walks
- * the patch graph to find the first `instrument.plugin` node and lifts
- * its `bundlePath` / `pluginId` into the engine's `StartConfig`.
+ * Start the engine from the currently-selected patch. MIDI inputs are
+ * derived from the rig (union of bound devices, session-wide — #122);
+ * the UI never picks devices per patch.
  */
 export function engineStartFromPatch(args: {
   patch: PatchWire
-  midiInputs: string[]
+  rig: RigWire
   audioOutput: string | null
 }): Promise<void> {
   return invoke<void>("engine_start_from_patch", args)
+}
+
+/**
+ * Push a rig edit to the running engine: re-derives the open device set
+ * + per-connection routes and rebinds in place (never restarts). A no-op
+ * success while the engine is idle.
+ */
+export function engineUpdateRig(rig: RigWire): Promise<void> {
+  return invoke<void>("engine_update_rig", { rig })
 }
 
 /**
@@ -248,29 +257,119 @@ export function engineSelfTest(): Promise<SelfTestResult> {
 }
 
 // =============================================================================
+// Learn mode (#122)
+// =============================================================================
+
+/** One decoded capture streamed while Learn mode is active (1-based channel). */
+export interface LearnEvent {
+  deviceId: string
+  deviceName: string
+  msg:
+    | { type: "noteOn"; channel: number; note: number; velocity: number }
+    | { type: "noteOff"; channel: number; note: number }
+    | { type: "controlChange"; channel: number; cc: number; value: number }
+    | { type: "pitchBend"; channel: number }
+}
+
+/**
+ * Enter Learn mode: the engine opens every connected MIDI input and
+ * streams decoded captures via `engine://learn`. The rig-derived
+ * performance set is restored by `engineLearnStop`.
+ */
+export function engineLearnStart(): Promise<void> {
+  return invoke<void>("engine_learn_start")
+}
+
+export function engineLearnStop(): Promise<void> {
+  return invoke<void>("engine_learn_stop")
+}
+
+export function onLearnEvent(cb: (e: LearnEvent) => void): Promise<UnlistenFn> {
+  return listen<LearnEvent>("engine://learn", (e) => cb(e.payload))
+}
+
+// =============================================================================
+// Plugin scan cache controls (#4)
+// =============================================================================
+
+/** Kick the background rescan thread ("Rescan now"); non-blocking. */
+export function rescanPlugins(): Promise<void> {
+  return invoke<void>("rescan_plugins")
+}
+
+/** Set the background rescan interval (minutes, clamped 1..=60 by Rust). */
+export function setPluginScanInterval(minutes: number): Promise<void> {
+  return invoke<void>("set_plugin_scan_interval", { minutes })
+}
+
+/** Fresh scan snapshots published by the background rescan thread. */
+export function onPluginScan(cb: (r: ClapScanResult) => void): Promise<UnlistenFn> {
+  return listen<ClapScanResult>("plugins://scan", (e) => cb(e.payload))
+}
+
+// =============================================================================
 // Show document load/save
 //
 // Mirror of `stardust_show::ShowDocument` and surrounding types. The Rust
 // crate inlines each patch's `PatchGraph`, so the TS shape does too — no
-// side-tables. `kind: "stardust.show"` and `schemaVersion: 1` per ADR-0003
-// / ADR-0005.
+// side-tables. `kind: "stardust.show"` and `schemaVersion: 3` per ADR-0003
+// / ADR-0005 (v3: rig components own hardware identity, #122).
 // =============================================================================
 
 export interface ShowHeader {
   kind: "stardust.show"
-  schemaVersion: 1
+  schemaVersion: 3
   stardustVersion?: string
   /** ISO-8601 timestamp set by the UI on every save. */
   savedAt?: string
 }
 
-export interface RigSourceWire {
+/**
+ * Kind-specific configuration bag for one rig component. Mirrors the
+ * free-form `config` on `stardust_show::RigComponent` (ADR-0004: strong
+ * typing lives in the engine); the vocabulary is documented in
+ * `docs/schemas/CHANGELOG.md` and consumed by
+ * `engine_graph.rs::parse_rig`.
+ */
+export interface RigComponentConfig {
+  /** Bound hardware device; absent = unbound (referencing nodes silent).
+   *  `id: null` = name-only binding (matches by display name). */
+  device?: { id: string | null; name: string }
+  /** 1–16; absent = any channel. */
+  channel?: number
+
+  // Keyboard — learned key range
+  lowNote?: number
+  highNote?: number
+
+  // Pads — grid + learned notes, row-major; null = not learned. Stored
+  // now, consumed per-note by v0.10.0 widgets.
+  rows?: number
+  cols?: number
+  padNotes?: Array<number | null>
+
+  // Controllers — the captured MIDI source
+  source?: { type: "cc"; cc: number } | { type: "pitchBend" } | { type: "note"; note: number }
+
+  // Behavioural extras (UI semantics; engine ignores these today)
+  switchMode?: "momentary" | "toggle"
+  polarity?: "normal" | "inverted"
+  expressionMin?: number
+  expressionMax?: number
+  pitchRangeSemitones?: number
+  controlRange?: "absolute" | "relative"
+}
+
+/** One rig component (schema v3): the unit of hardware identity. */
+export interface RigComponentWire {
+  id: string
   kind: NodeKind
-  label: string
+  name: string
+  config?: RigComponentConfig
 }
 
 export interface RigWire {
-  sources: RigSourceWire[]
+  components: RigComponentWire[]
 }
 
 export interface SavedBlockWire {
@@ -327,6 +426,7 @@ export type ShowValidationError =
   | { kind: "duplicateSongId"; id: string }
   | { kind: "duplicatePatchId"; id: string }
   | { kind: "duplicateBlockId"; id: string }
+  | { kind: "duplicateRigComponentId"; id: string }
   | {
       kind: "patchInvalid"
       song: string

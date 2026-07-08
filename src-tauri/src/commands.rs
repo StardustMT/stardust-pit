@@ -18,11 +18,17 @@
 //!   every engine failure mode in the public surface. Logs on the Rust
 //!   side carry the structured details for debugging.
 
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
+
+use arc_swap::ArcSwapOption;
 use serde::{Deserialize, Serialize};
 use stardust_core::audio;
 use stardust_core::midi::{self, MidiMessage};
-use stardust_core::plugin::clap;
-use stardust_core::show::{Patch, ShowDocument, ShowValidationError};
+use stardust_core::plugin::{cache as plugin_cache, clap};
+use stardust_core::show::{Patch, Rig, ShowDocument, ShowValidationError};
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -49,10 +55,12 @@ use crate::engine::{
 // =============================================================================
 
 /// Async mutex held during any plugin / MIDI / audio device enumeration.
-/// Discovery is a rare, startup-time operation; serializing it costs the user
-/// nothing and keeps macOS CoreAudio + dlopen from racing.
-#[derive(Default)]
-pub struct DiscoveryLock(pub Mutex<()>);
+/// Discovery is a rare operation; serializing it costs the user nothing
+/// and keeps macOS CoreAudio + dlopen from racing. `Arc` so the
+/// background rescan thread (which isn't a Tauri command) can hold the
+/// same lock via `blocking_lock`.
+#[derive(Clone, Default)]
+pub struct DiscoveryLock(pub Arc<Mutex<()>>);
 
 // =============================================================================
 // Plugin discovery
@@ -94,14 +102,63 @@ pub struct ClapScanResult {
     pub paths_scanned: Vec<String>,
 }
 
-#[tauri::command]
-pub async fn list_clap_plugins(lock: State<'_, DiscoveryLock>) -> Result<ClapScanResult, String> {
-    let _guard = lock.0.lock().await;
-    tokio::task::spawn_blocking(|| {
+// -----------------------------------------------------------------------------
+// Plugin scan cache (stardust-pit#4)
+//
+// Snapshot semantics: the frontend always reads an immutable `Arc`'d
+// `ClapScanResult`; whichever thread rescans builds a fresh result and
+// atomically swaps it in. No mutex-on-read, no torn reads. The on-disk
+// mtime-keyed cache (`~/.stardust/plugin-cache.json`) lives in
+// `stardust_core::plugin::cache`; this layer owns the in-memory snapshot,
+// the background rescan thread, and the `plugins://scan` change event.
+// -----------------------------------------------------------------------------
+
+/// Where scan snapshots + rescan controls live (Tauri-managed state).
+pub struct PluginCache {
+    /// Latest scan snapshot; `None` until the first scan completes.
+    snapshot: ArcSwapOption<ClapScanResult>,
+    /// Background rescan interval in minutes (Settings-configurable,
+    /// default 5, clamped 1..=60).
+    interval_min: AtomicU64,
+    /// Kick channel to the background thread ("Rescan now").
+    kick: std::sync::Mutex<Option<Sender<()>>>,
+}
+
+impl Default for PluginCache {
+    fn default() -> Self {
+        Self {
+            snapshot: ArcSwapOption::empty(),
+            interval_min: AtomicU64::new(5),
+            kick: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+impl PluginCache {
+    pub fn set_kick(&self, tx: Sender<()>) {
+        *self.kick.lock().expect("kick mutex poisoned") = Some(tx);
+    }
+
+    pub fn interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.interval_min.load(Ordering::Relaxed) * 60)
+    }
+
+    /// Run one cached scan and swap the snapshot in. Returns the fresh
+    /// snapshot. Blocking — call from `spawn_blocking` or the rescan
+    /// thread, with the discovery lock held.
+    pub fn scan(&self) -> Arc<ClapScanResult> {
         let paths = clap::default_clap_search_paths();
         let paths_scanned: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
-        let scan = clap::scan_paths(&paths);
+        let started = std::time::Instant::now();
+        let outcome = plugin_cache::scan_paths_cached(&paths, &plugin_cache_path());
+        tracing::info!(
+            cache_hits = outcome.cache_hits,
+            loaded = outcome.loaded,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "plugin scan"
+        );
 
+        let scan = outcome.result;
         let mut plugins: Vec<ClapPluginInfo> = Vec::with_capacity(scan.bundles.len());
         for bundle in &scan.bundles {
             let bundle_path = bundle.path.display().to_string();
@@ -126,14 +183,70 @@ pub async fn list_clap_plugins(lock: State<'_, DiscoveryLock>) -> Result<ClapSca
             })
             .collect();
 
-        ClapScanResult {
+        let result = Arc::new(ClapScanResult {
             plugins,
             errors,
             paths_scanned,
-        }
-    })
-    .await
-    .map_err(|e| format!("clap scan task panicked: {e}"))
+        });
+        self.snapshot.store(Some(result.clone()));
+        result
+    }
+}
+
+/// `~/.stardust/plugin-cache.json` (per the #4 acceptance criteria).
+fn plugin_cache_path() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    home.join(".stardust/plugin-cache.json")
+}
+
+/// Return the current plugin list. First call performs a (cached) scan
+/// synchronously — with a warm mtime cache this is the fast cold-launch
+/// path; later calls return the snapshot immediately. Background rescans
+/// keep the snapshot fresh and announce changes via the `plugins://scan`
+/// event.
+#[tauri::command]
+pub async fn list_clap_plugins(
+    lock: State<'_, DiscoveryLock>,
+    cache: State<'_, Arc<PluginCache>>,
+) -> Result<ClapScanResult, String> {
+    if let Some(snapshot) = cache.snapshot.load_full() {
+        return Ok((*snapshot).clone());
+    }
+    let _guard = lock.0.lock().await;
+    // Re-check: another caller may have scanned while we waited.
+    if let Some(snapshot) = cache.snapshot.load_full() {
+        return Ok((*snapshot).clone());
+    }
+    let cache = cache.inner().clone();
+    tokio::task::spawn_blocking(move || (*cache.scan()).clone())
+        .await
+        .map_err(|e| format!("clap scan task panicked: {e}"))
+}
+
+/// Kick the background rescan thread ("Rescan now"). Non-blocking: the
+/// UI hears about the outcome via the `plugins://scan` event.
+#[tauri::command]
+pub fn rescan_plugins(cache: State<'_, Arc<PluginCache>>) -> Result<(), String> {
+    let kick = cache.kick.lock().expect("kick mutex poisoned");
+    match kick.as_ref() {
+        Some(tx) => tx.send(()).map_err(|_| "rescan thread is gone".into()),
+        None => Err("rescan thread not started".into()),
+    }
+}
+
+/// Set the background rescan interval (minutes, clamped 1..=60).
+#[tauri::command]
+pub fn set_plugin_scan_interval(
+    minutes: u64,
+    cache: State<'_, Arc<PluginCache>>,
+) -> Result<(), String> {
+    cache
+        .interval_min
+        .store(minutes.clamp(1, 60), Ordering::Relaxed);
+    Ok(())
 }
 
 // =============================================================================
@@ -234,23 +347,54 @@ pub enum EngineStartError {
     Engine { message: String },
 }
 
-/// Start the engine from the active patch. An empty `midi_inputs` runs
-/// with no hardware MIDI input — the engine still hosts and audibly
-/// plays whatever the on-screen keyboard injects via `engine_send_midi`.
+/// Start the engine from the active patch. MIDI inputs derive from the
+/// rig (union of bound devices, session-wide — #122); a rig with no
+/// bound components runs with no hardware input, and the on-screen
+/// keyboard still plays via `engine_send_midi`.
 #[tauri::command]
 pub fn engine_start_from_patch(
     patch: Patch,
-    midi_inputs: Vec<String>,
+    rig: Rig,
     audio_output: Option<String>,
     engine: State<'_, EngineHandle>,
 ) -> Result<(), EngineStartError> {
     engine
         .send(EngineCommand::Start(StartConfig {
             graph: patch.graph,
-            midi_inputs,
+            rig,
             audio_output,
         }))
         .map_err(|message| EngineStartError::Engine { message })
+}
+
+/// Push a rig edit to the running engine: re-derives the device union +
+/// per-connection routes and rebinds (never restarts). A no-op success
+/// when idle — the rig rides with the next start.
+#[tauri::command]
+pub async fn engine_update_rig(
+    rig: Rig,
+    engine: State<'_, EngineHandle>,
+) -> Result<(), RebindError> {
+    let handle = engine.inner().clone();
+    tokio::task::spawn_blocking(move || handle.update_rig(rig))
+        .await
+        .map_err(|e| RebindError::Internal {
+            message: format!("rig update task panicked: {e}"),
+        })?
+}
+
+/// Enter Learn mode: the engine opens every connected MIDI input and
+/// streams decoded captures to the UI via the `engine://learn` event.
+/// The rig-derived performance set is restored by `engine_learn_stop`.
+#[tauri::command]
+pub fn engine_learn_start(engine: State<'_, EngineHandle>) -> Result<(), String> {
+    engine.send(EngineCommand::LearnStart)
+}
+
+/// Leave Learn mode and restore the rig-derived input set.
+#[tauri::command]
+pub fn engine_learn_stop(engine: State<'_, EngineHandle>) -> Result<(), String> {
+    engine.send(EngineCommand::LearnStop)
 }
 
 /// Swap the audio output device and/or the hardware MIDI input set in

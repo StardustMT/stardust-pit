@@ -5,13 +5,13 @@ import { Label } from "@/components/ui/label"
 
 /**
  * A read-only display + a Learn button. While listening, the Learn button
- * pulses red and the display reads "Listening for control…". The next
- * incoming MIDI event (in real life) populates the value; in Storybook we
- * mock the capture by auto-resolving with `mockCapture` after a short delay.
+ * pulses red and the display reads "Listening for control…".
  *
- * In Phase 2 (Tauri wiring), replace the setTimeout in the listen handler
- * with a Tauri event listener that resolves on the next `midi-cc` / `midi-note`
- * event after `start_learn(field_id)` has been issued.
+ * Real capture: pass `capture` — an async function that resolves with the
+ * captured display value (having done any side-effecting config writes
+ * itself) or `undefined` on cancel; the field aborts it via `AbortSignal`
+ * when the user hits Cancel. Without `capture` (Storybook / mocks), the
+ * field auto-resolves with `mockCapture` after a short delay.
  */
 export interface LearnableFieldProps {
   label: string
@@ -21,6 +21,8 @@ export interface LearnableFieldProps {
   placeholder?: string
   /** Called when Learn completes; receives the captured value. */
   onCapture?: (captured: string) => void
+  /** Real capture (#122): awaits the next matching Learn event. */
+  capture?: (signal: AbortSignal) => Promise<string | undefined>
   /** Storybook only: what to "capture" when the mock listen resolves. */
   mockCapture?: () => string
   /** Storybook only: how long to pretend to listen. */
@@ -33,23 +35,45 @@ export function LearnableField({
   value,
   placeholder = "Not assigned",
   onCapture,
+  capture,
   mockCapture,
   mockListenMs = 1400,
   className,
 }: LearnableFieldProps) {
   const [listening, setListening] = React.useState(false)
 
+  // Refs keep an in-flight listen stable across parent re-renders —
+  // re-created closures must not abort + restart the Learn session.
+  const captureRef = React.useRef(capture)
+  const mockRef = React.useRef(mockCapture)
+  const onCaptureRef = React.useRef(onCapture)
+  React.useEffect(() => {
+    captureRef.current = capture
+    mockRef.current = mockCapture
+    onCaptureRef.current = onCapture
+  })
+
   React.useEffect(() => {
     if (!listening) return
+    const capture = captureRef.current
+    if (capture) {
+      const controller = new AbortController()
+      void capture(controller.signal).then((captured) => {
+        if (controller.signal.aborted) return
+        setListening(false)
+        if (captured !== undefined) onCaptureRef.current?.(captured)
+      })
+      return () => controller.abort()
+    }
     const t = window.setTimeout(() => {
       setListening(false)
-      const captured = mockCapture
-        ? mockCapture()
+      const captured = mockRef.current
+        ? mockRef.current()
         : `CC ${Math.floor(Math.random() * 127) + 1} ch 1`
-      onCapture?.(captured)
+      onCaptureRef.current?.(captured)
     }, mockListenMs)
     return () => window.clearTimeout(t)
-  }, [listening, mockCapture, mockListenMs, onCapture])
+  }, [listening, mockListenMs])
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>

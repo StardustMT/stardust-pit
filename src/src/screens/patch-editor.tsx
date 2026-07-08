@@ -44,12 +44,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  type MidiDeviceOption,
-  SourceBindingInspector,
-} from "@/components/patch-graph/source-binding-inspector"
+import { SourceComponentPicker } from "@/components/patch-graph/source-component-picker"
+import { RigComponentsContext } from "@/components/patch-graph/rig-context"
 import { usePluginScan } from "@/lib/use-plugin-scan"
-import { useMidiInputs } from "@/lib/use-midi-inputs"
+import type { RigComponentWire } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 
 /**
@@ -253,10 +251,18 @@ export interface PatchEditorProps {
   songName: string
   /** Optional actions slot in the title bar (Open / Save buttons, etc.). */
   headerActions?: React.ReactNode
+  /** Bottom status footer (the live app passes the real engine footer). */
+  statusBar?: React.ReactNode
   /** User-saved composite presets shown in the right-panel Blocks tab. */
   savedComposites?: Array<{ id: string; name: string; nodeCount: number }>
-  /** Source kinds advertised in the right-panel Sources group. */
-  rigSources?: RigSource[]
+  /** The show's rig components — the Sources library group + the source
+   *  inspector's component picker derive from these (#122). */
+  rigComponents?: RigComponentWire[]
+  /** App mode shown in the shell switcher. Controlled by the parent
+   *  since #122 — Setup mounts a different screen. Defaults to program
+   *  for stories that don't care. */
+  mode?: AppMode
+  onModeChange?: (mode: AppMode) => void
   /** Append a new song to the show. The outline's "Add song" button calls this. */
   onAddSong?: () => void
   /** Append a new empty patch to the given song. The outline's per-song "+" calls this. */
@@ -273,10 +279,12 @@ export function PatchEditor({
   patchName,
   songName,
   headerActions,
+  statusBar,
   savedComposites = [],
-  rigSources,
+  rigComponents,
+  mode = "program",
+  onModeChange,
 }: PatchEditorProps) {
-  const [mode, setMode] = React.useState<AppMode>("program")
   const [history, setHistory] = React.useState<PatchGraph[]>([])
   const [redoStack, setRedoStack] = React.useState<PatchGraph[]>([])
 
@@ -286,30 +294,29 @@ export function PatchEditor({
 
   // Live CLAP plugin list — fed to the right-panel Library so dropping
   // an instrument creates a pre-configured plugin node (no second-pass
-  // picker). Shared via zustand with the EnginePanel's scan.
+  // picker). Shared via zustand across every scan consumer.
   const { plugins: installedPlugins } = usePluginScan()
 
-  // Connected MIDI inputs — fed to the source-binding inspector (#2).
-  // Empty outside Tauri; Storybook stories mock their own lists.
-  const { inputs: midiInputList } = useMidiInputs()
-  const midiDevices: MidiDeviceOption[] = React.useMemo(
-    () => midiInputList.map((d) => ({ name: d.name, id: d.id, connected: true })),
-    [midiInputList],
-  )
-
-  // Rig sources shown in the Library's Sources group. We always prepend
-  // a synthetic "Built-in UI keyboard" entry so the user has at least
-  // one keyboard source available before the Rig page exists. It maps
-  // to `source.keyboard`, which is what hardware MIDI feeds into too —
-  // they coexist fine; events fan out to every source whose binding
-  // matches (#2).
+  // Sources shown in the Library group: one card per rig component —
+  // dropping it creates a node already assigned to that component
+  // (#122: a source node *is* a rig component appearing in the patch).
+  // A synthetic "Built-in UI keyboard" entry stays first so there is
+  // always a keyboard source; it maps to `source.keyboard` with no
+  // component (UI-fed only, silent on hardware).
   const augmentedRigSources: RigSource[] = React.useMemo(() => {
     const builtin: RigSource = {
       kind: "source.keyboard",
       label: "Built-in UI keyboard",
     }
-    return [builtin, ...(rigSources ?? [])]
-  }, [rigSources])
+    return [
+      builtin,
+      ...(rigComponents ?? []).map((c) => ({
+        kind: c.kind,
+        label: c.name,
+        componentId: c.id,
+      })),
+    ]
+  }, [rigComponents])
 
   // Reset undo history + selections whenever the active patch changes.
   // Cross-patch undo would surprise users; history belongs to the patch
@@ -1050,7 +1057,8 @@ export function PatchEditor({
           onSetZoneColor={setZoneColor}
           onSetZoneWireFollows={setZoneWireFollows}
           onSetNodeConfig={setNodeConfig}
-          midiDevices={midiDevices}
+          rigComponents={rigComponents ?? []}
+          onOpenRigScreen={() => onModeChange?.("setup")}
         />
       ),
     },
@@ -1079,16 +1087,16 @@ export function PatchEditor({
   // -------------------------------------------------------------------
 
   return (
-    <>
+    <RigComponentsContext.Provider value={rigComponents ?? []}>
       <AppShellFrame
         // Fill the slot App.tsx gives us instead of the frame's default
-        // h-screen — the engine panel strip sits above us, and h-screen
-        // here pushed the status footer below the fold (#119).
+        // h-screen (#119).
         className="h-full w-full"
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={onModeChange}
         showName={showName}
         headerActions={headerActions}
+        statusBar={statusBar}
         contextPanel={
           <ShowOutline
             showName={showName}
@@ -1106,7 +1114,7 @@ export function PatchEditor({
             <RightPanel
               onAddNode={addNode}
               rigSources={augmentedRigSources}
-              onOpenRigScreen={() => setMode("setup")}
+              onOpenRigScreen={() => onModeChange?.("setup")}
               installedPlugins={installedPlugins}
               savedComposites={savedComposites}
             />
@@ -1201,7 +1209,7 @@ export function PatchEditor({
           onClose={() => setContextMenu(null)}
         />
       )}
-    </>
+    </RigComponentsContext.Provider>
   )
 }
 
@@ -1274,7 +1282,8 @@ function SettingsTab({
   onSetZoneColor,
   onSetZoneWireFollows,
   onSetNodeConfig,
-  midiDevices,
+  rigComponents,
+  onOpenRigScreen,
 }: {
   breadcrumb: BreadcrumbItem[]
   selectedNode?: GraphNode
@@ -1305,7 +1314,8 @@ function SettingsTab({
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
   onSetNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void
-  midiDevices: MidiDeviceOption[]
+  rigComponents: RigComponentWire[]
+  onOpenRigScreen?: () => void
 }) {
   return (
     <div className="flex h-full flex-col gap-3">
@@ -1327,7 +1337,8 @@ function SettingsTab({
             onSetZoneColor={onSetZoneColor}
             onSetZoneWireFollows={onSetZoneWireFollows}
             onSetNodeConfig={onSetNodeConfig}
-            midiDevices={midiDevices}
+            rigComponents={rigComponents}
+            onOpenRigScreen={onOpenRigScreen}
           />
         ) : selectedComposite ? (
           <CompositeSettings
@@ -1512,7 +1523,8 @@ function NodeSettings({
   onSetZoneColor,
   onSetZoneWireFollows,
   onSetNodeConfig,
-  midiDevices,
+  rigComponents,
+  onOpenRigScreen,
 }: {
   node: GraphNode
   onDelete: () => void
@@ -1526,7 +1538,8 @@ function NodeSettings({
   onSetZoneColor: (nodeId: string, portId: string, hue: number | undefined) => void
   onSetZoneWireFollows: (nodeId: string, portId: string, follows: boolean) => void
   onSetNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void
-  midiDevices: MidiDeviceOption[]
+  rigComponents: RigComponentWire[]
+  onOpenRigScreen?: () => void
 }) {
   const isPlugin = node.kind === "instrument.plugin"
   return (
@@ -1586,7 +1599,8 @@ function NodeSettings({
         ) : (
           <KindConfig
             node={node}
-            midiDevices={midiDevices}
+            rigComponents={rigComponents}
+            onOpenRigScreen={onOpenRigScreen}
             onAddZone={() => onAddZone(node.id)}
             onRemoveZone={(portId) => onRemoveZone(node.id, portId)}
             onResizeZone={(portId, range) => onResizeZone(node.id, portId, range)}
@@ -1736,7 +1750,8 @@ function PluginUIDock({
 
 function KindConfig({
   node,
-  midiDevices,
+  rigComponents,
+  onOpenRigScreen,
   onAddZone,
   onRemoveZone,
   onResizeZone,
@@ -1745,7 +1760,8 @@ function KindConfig({
   onSetNodeConfig,
 }: {
   node: GraphNode
-  midiDevices: MidiDeviceOption[]
+  rigComponents: RigComponentWire[]
+  onOpenRigScreen?: () => void
   onAddZone: () => void
   onRemoveZone: (portId: string) => void
   onResizeZone: (portId: string, range: { fromNote: number; toNote: number }) => void
@@ -1761,10 +1777,11 @@ function KindConfig({
       </div>
       {isSource && (
         <div className="rounded-md border bg-background p-3">
-          <SourceBindingInspector
+          <SourceComponentPicker
             node={node}
-            devices={midiDevices}
-            onChange={(binding) => onSetNodeConfig({ hardwareBinding: binding })}
+            components={rigComponents}
+            onChange={(id) => onSetNodeConfig({ rigComponentId: id })}
+            onOpenRigScreen={onOpenRigScreen}
           />
         </div>
       )}
